@@ -1,0 +1,62 @@
+# ============================================================
+# 论文自动写作助手 - 全局配置
+# ============================================================
+
+# LLM 配置
+llm:
+  provider: "anthropic"       # anthropic / openai
+  model: "claude-sonnet-4-6"  # 模型名称
+  api_key_env: "ANTHROPIC_API_KEY"
+  max_tokens: 4096
+  temperature: 0.7
+
+# RAG 配置
+rag:
+  template_dir: "templates"
+  embedding_model: "all-MiniLM-L6-v2"  # sentence-transformers 模型
+  vector_db_path: "data/vector_db"
+  top_k: 1  # 检索最匹配的模板数
+
+# 论文类型定义
+paper_categories:
+  - id: "science_paper"
+    name: "理科论文"
+    description: "数学、物理、化学、生物等自然科学领域的学术论文"
+    template: "templates/science_paper.md"
+
+  - id: "liberal_arts_paper"
+    name: "文科论文"
+    description: "文学、历史、哲学、社会学等人文社科领域的学术论文"
+    template: "templates/liberal_arts_paper.md"
+
+  - id: "engineering_paper"
+    name: "工科论文"
+    description: "计算机、机械、电气、土木等工程技术领域的学术论文"
+    template: "templates/engineering_paper.md"
+
+  - id: "lab_report"
+    name: "实验报告"
+    description: "包含实验目的、方法、结果、分析的实验报告"
+    template: "templates/lab_report.md"
+
+  - id: "research_report"
+    name: "调研报告"
+    description: "行业调研、社会调查、市场分析等调研类报告"
+    template: "templates/research_report.md"
+
+# 文献检索配置
+literature_search:
+  sources:
+    - "google_scholar"
+    - "cnki"
+  max_results_per_source: 10
+  search_depth: "comprehensive"  # basic / comprehensive
+  timeout_seconds: 30
+
+# 输出配置
+output:
+  dir: "output"
+  formats:
+    - "markdown"
+    - "docx"
+  timestamp_dir: true  # 按时间戳创建子目录
