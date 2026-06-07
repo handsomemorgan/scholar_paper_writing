@@ -29,7 +29,7 @@
 │  └────────┬────────┘                                     │
 │           ▼                                              │
 │  ┌─────────────────┐                                     │
-│  │ Agent 4: 文献检索│  搜索Google Scholar/CNKI             │
+│  │ Agent 4: 文献检索│  通过 arXiv API 搜索学术文献          │
 │  │ (学术数据库检索)  │  (去重、排序、质量筛选)              │
 │  └────────┬────────┘                                     │
 │           ▼                                              │
@@ -75,7 +75,7 @@ scholar_paper_writing/
 │   └── format_checker.py        # Agent 7: 格式校验
 ├── utils/                       # 工具模块
 │   ├── llm_client.py            # LLM客户端（Anthropic/OpenAI）
-│   └── web_search.py            # Web搜索（Google Scholar/CNKI）
+│   └── web_search.py            # Web搜索（arXiv API / CNKI备选）
 ├── orchestrator.py              # 主编排器（串联7个Agent）
 ├── main.py                      # CLI入口
 ├── output/                      # 生成论文输出目录
@@ -159,7 +159,7 @@ llm:
 
 literature_search:
   sources:
-    - "google_scholar"
+    - "arxiv"
     - "cnki"
   max_results_per_source: 10   # 每个数据源最大结果数
 
@@ -192,14 +192,14 @@ output:
 
 - **LLM**: anthropic / openai SDK
 - **RAG**: chromadb + sentence-transformers
-- **Web搜索**: scholarly + beautifulsoup4 + requests
+- **Web搜索**: arXiv API（标准库）+ beautifulsoup4 + requests
 - **文档处理**: PyYAML + python-docx + markdown
 - **CLI**: click + rich
 
 ## 注意事项
 
 1. **API密钥**: 需要有效的LLM API密钥才能运行完整流程
-2. **学术搜索**: Google Scholar / CNKI 可能因反爬机制不稳定，生产环境建议使用官方API（如SerpAPI）
+2. **学术搜索**: 默认使用 arXiv 公开 API（免费开放、无需注册），如需要可扩展 Semantic Scholar 等数据源
 3. **学术规范**: 本工具为研究和学习目的开发，使用时应遵守相关学术规范
 4. **离线模式**: 系统设计为需要LLM API支持，部分Agent在LLM失败时有规则fallback
 

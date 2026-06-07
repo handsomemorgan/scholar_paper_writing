@@ -1,16 +1,28 @@
 """
-Web搜索模块 - 谷歌学术、中国知网等学术数据库检索
+Web搜索模块 - arXiv 公开接口检索学术文献
 
-使用 scholarly 库访问 Google Scholar，
-使用 requests + BeautifulSoup 抓取 CNKI 等中文数据库。
+使用 arXiv API (https://export.arxiv.org/api/query) 进行文献检索。
+arXiv 是免费的开放获取预印本数据库，覆盖物理学、计算机科学、
+数学、生物学、经济学等多个学科领域。
+
+API 文档: https://info.arxiv.org/help/api/index.html
 """
 
 import logging
 import time
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+# arXiv API 基础 URL
+ARXIV_API_URL = "http://export.arxiv.org/api/query"
+
+# arXiv 要求的速率限制：至少 3 秒一次请求
+ARXIV_RATE_LIMIT = 3.0
 
 
 @dataclass
@@ -23,15 +35,17 @@ class LiteratureItem:
     abstract: str = ""
     citation_count: int = 0
     url: str = ""
-    source: str = ""  # google_scholar / cnki
+    source: str = ""  # arxiv / cnki
+    arxiv_id: str = ""  # arXiv 论文 ID，如 "2301.00001"
+    primary_category: str = ""  # 主分类，如 "cs.AI"
 
 
 class LiteratureSearcher:
-    """学术文献检索器 — 支持多数据源"""
+    """学术文献检索器 — 基于 arXiv 公开接口"""
 
     def __init__(self, config: Dict):
         search_config = config.get("literature_search", {})
-        self.sources = search_config.get("sources", ["google_scholar"])
+        self.sources = search_config.get("sources", ["arxiv"])
         self.max_results = search_config.get("max_results_per_source", 10)
         self.timeout = search_config.get("timeout_seconds", 30)
 
@@ -50,8 +64,8 @@ class LiteratureSearcher:
 
         for source in self.sources:
             try:
-                if source == "google_scholar":
-                    results = self._search_google_scholar(keywords)
+                if source == "arxiv":
+                    results = self._search_arxiv(keywords)
                 elif source == "cnki":
                     results = self._search_cnki(keywords)
                 else:
@@ -74,65 +88,163 @@ class LiteratureSearcher:
         logger.info(f"Total unique results: {len(all_results)}")
         return all_results
 
-    def _search_google_scholar(self, keywords: List[str]) -> List[LiteratureItem]:
+    def _search_arxiv(self, keywords: List[str]) -> List[LiteratureItem]:
         """
-        使用 scholarly 库检索 Google Scholar。
+        使用 arXiv 公开 API 检索文献。
 
-        注意：scholarly 可能因 Google 反爬机制而不稳定，
-        生产环境建议使用 SerpAPI 或官方 Google Scholar API。
+        arXiv API 完全免费开放，无需 API Key，无需注册。
+        覆盖学科：物理学、计算机科学、数学、生物学、经济学、统计学等。
+
+        速率限制：建议至少间隔 3 秒，请遵守 arXiv 使用政策。
         """
         results = []
-        query = " ".join(keywords)
+
+        # 构建查询字符串：用 AND 连接所有关键词
+        query_parts = []
+        for kw in keywords:
+            # 对每个关键词用 all 字段搜索
+            query_parts.append(f'all:"{kw}"')
+        query_string = " AND ".join(query_parts)
+
+        if not query_string:
+            query_string = "all:research"
+
+        # 构建请求参数
+        params = {
+            "search_query": query_string,
+            "start": 0,
+            "max_results": self.max_results,
+            "sortBy": "relevance",
+        }
+        url = f"{ARXIV_API_URL}?{urllib.parse.urlencode(params)}"
+
+        logger.info(f"arXiv API 请求: {url}")
 
         try:
-            from scholarly import scholarly
+            # 速率限制
+            time.sleep(ARXIV_RATE_LIMIT)
 
-            search_query = scholarly.search_pubs(query)
-            count = 0
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "PaperWritingAssistant/1.0",
+                },
+            )
 
-            for pub in search_query:
-                if count >= self.max_results:
-                    break
+            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                xml_data = response.read().decode("utf-8")
 
+            # 解析 Atom XML 响应
+            root = ET.fromstring(xml_data)
+
+            # XML 命名空间
+            ns = {
+                "atom": "http://www.w3.org/2005/Atom",
+                "arxiv": "http://arxiv.org/schemas/atom",
+            }
+
+            entries = root.findall("atom:entry", ns)
+            logger.info(f"arXiv 返回 {len(entries)} 条结果")
+
+            for entry in entries:
                 try:
-                    item = LiteratureItem(
-                        title=pub.get("bib", {}).get("title", "Unknown"),
-                        authors=pub.get("bib", {}).get("author", []),
-                        year=pub.get("bib", {}).get("pub_year", None),
-                        journal=pub.get("bib", {}).get("journal", ""),
-                        abstract=pub.get("bib", {}).get("abstract", ""),
-                        citation_count=pub.get("num_citations", 0),
-                        url=pub.get("pub_url", pub.get("eprint_url", "")),
-                        source="google_scholar",
-                    )
-                    results.append(item)
-                    count += 1
-
-                    # 速率限制
-                    time.sleep(1)
-
+                    item = self._parse_arxiv_entry(entry, ns)
+                    if item:
+                        results.append(item)
                 except Exception as e:
-                    logger.warning(f"Error parsing a Google Scholar result: {e}")
+                    logger.warning(f"Error parsing arXiv entry: {e}")
                     continue
 
-        except ImportError:
-            logger.error(
-                "scholarly not installed. Install with: pip install scholarly"
-            )
+        except urllib.error.URLError as e:
+            logger.error(f"arXiv API 网络请求失败: {e}")
+        except ET.ParseError as e:
+            logger.error(f"arXiv API 响应 XML 解析失败: {e}")
         except Exception as e:
-            logger.error(f"Google Scholar search error: {e}")
+            logger.error(f"arXiv search error: {e}")
 
         return results
 
+    def _parse_arxiv_entry(
+        self, entry: ET.Element, ns: Dict[str, str]
+    ) -> Optional[LiteratureItem]:
+        """解析单个 arXiv Atom entry 为 LiteratureItem"""
+        # 标题
+        title_el = entry.find("atom:title", ns)
+        title = title_el.text.strip().replace("\n", " ") if title_el is not None and title_el.text else ""
+        if not title:
+            return None
+
+        # 作者
+        authors = []
+        for author_el in entry.findall("atom:author", ns):
+            name_el = author_el.find("atom:name", ns)
+            if name_el is not None and name_el.text:
+                authors.append(name_el.text.strip())
+
+        # 摘要
+        summary_el = entry.find("atom:summary", ns)
+        abstract = summary_el.text.strip().replace("\n", " ") if summary_el is not None and summary_el.text else ""
+
+        # 出版日期（提取年份）
+        published_el = entry.find("atom:published", ns)
+        year = None
+        if published_el is not None and published_el.text:
+            try:
+                year = int(published_el.text[:4])
+            except (ValueError, IndexError):
+                pass
+
+        # arXiv ID 和 URL
+        id_el = entry.find("atom:id", ns)
+        arxiv_id = ""
+        url = ""
+        if id_el is not None and id_el.text:
+            full_url = id_el.text.strip()
+            url = full_url
+            # 从 URL 中提取 arXiv ID
+            # 格式: http://arxiv.org/abs/2301.00001v1
+            arxiv_id = full_url.split("/abs/")[-1] if "/abs/" in full_url else ""
+
+        # 主分类
+        primary_cat_el = entry.find("arxiv:primary_category", ns)
+        primary_category = ""
+        if primary_cat_el is not None:
+            primary_category = primary_cat_el.get("term", "")
+
+        # 期刊/会议信息（arXiv 的 comment 字段或 journal-ref）
+        journal = ""
+        journal_ref_el = entry.find("arxiv:journal_ref", ns)
+        if journal_ref_el is not None and journal_ref_el.text:
+            journal = journal_ref_el.text.strip()
+
+        # 评论信息（可能包含发表信息）
+        comment_el = entry.find("arxiv:comment", ns)
+        comment = comment_el.text.strip() if comment_el is not None and comment_el.text else ""
+
+        # citation_count 在 arXiv 中不可用，设为 0
+        # （可以通过 Semantic Scholar API 补充，但不是必须的）
+
+        return LiteratureItem(
+            title=title,
+            authors=authors,
+            year=year,
+            journal=journal or comment or "arXiv preprint",
+            abstract=abstract,
+            citation_count=0,  # arXiv 不提供引用数
+            url=url,
+            source="arxiv",
+            arxiv_id=arxiv_id,
+            primary_category=primary_category,
+        )
+
     def _search_cnki(self, keywords: List[str]) -> List[LiteratureItem]:
         """
-        检索中国知网(CNKI)。
+        检索中国知网(CNKI) — 备用数据源。
 
-        注意：CNKI有严格的反爬机制。以下为模拟实现，
-        实际使用时建议：
+        注意：CNKI有严格的反爬机制。实际使用时建议：
         1. 使用CNKI官方API（需机构授权）
         2. 使用学校图书馆的CNKI代理
-        3. 考虑使用CNKI镜像站点
+        3. 默认不使用此数据源（主要使用 arXiv）
         """
         results = []
 
@@ -141,7 +253,6 @@ class LiteratureSearcher:
             from bs4 import BeautifulSoup
 
             query = " ".join(keywords)
-            # CNKI 搜索URL（此为模拟，实际URL可能变化）
             search_url = "https://kns.cnki.net/kns8/defaultresult/index"
 
             headers = {
@@ -156,7 +267,7 @@ class LiteratureSearcher:
 
             params = {
                 "kwd": query,
-                "dbcode": "CJFD",  # 期刊论文
+                "dbcode": "CJFD",
             }
 
             response = requests.get(
@@ -168,10 +279,9 @@ class LiteratureSearcher:
 
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "lxml")
-                # CNKI页面解析（具体选择器需根据实际页面结构调整）
                 result_items = soup.select(".result-item, tr.result-item")
 
-                for item in result_items[: self.max_results]:
+                for item in result_items[:self.max_results]:
                     try:
                         title_el = item.select_one(".title, a.title")
                         title = title_el.get_text(strip=True) if title_el else ""
@@ -217,8 +327,6 @@ class LiteratureSearcher:
 
         except ImportError as e:
             logger.error(f"Missing dependency for CNKI search: {e}")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"CNKI request failed: {e}")
         except Exception as e:
             logger.error(f"CNKI search error: {e}")
 
@@ -242,7 +350,6 @@ class WebSearcher:
             import requests
             from bs4 import BeautifulSoup
 
-            # DuckDuckGo 作为备选（比 Google 更容易抓取）
             search_url = "https://html.duckduckgo.com/html/"
             headers = {
                 "User-Agent": (

@@ -10,8 +10,8 @@ chromadb>=0.5.0
 sentence-transformers>=2.2.0
 
 # Web Search & Scraping
-scholarly>=1.7.0
-beautifulsoup4>=4.12.0
+# arXiv API 使用标准库 urllib + xml.etree，无需额外依赖
+beautifulsoup4>=4.12.0  # 用于通用网页搜索 (WebSearcher / CNKI备选)
 requests>=2.31.0
 lxml>=5.0.0
 
