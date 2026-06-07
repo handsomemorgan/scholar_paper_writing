@@ -235,6 +235,57 @@ class LiteratureSearcher:
 
         return results
 
+    def _build_arxiv_query(self, keywords: List[str]) -> str:
+        """
+        将用户友好的关键词列表转换为 arXiv API 查询语法。
+
+        处理两种情况：
+        1. 简单短语（无布尔运算符）→ all:"phrase"
+        2. 含 AND/OR 的复杂查询 → (all:word1+AND+all:word2)+AND+(all:word3)
+
+        Args:
+            keywords: 关键词列表，如 ["deep learning AND image classification"]
+                      或 ["deep learning", "image recognition"]
+
+        Returns:
+            arXiv API 格式的查询字符串
+        """
+        import re
+
+        # 先用 " AND " 连接所有关键词（用户可能传多个）
+        raw_query = " AND ".join(keywords)
+
+        # 按 AND/OR 分割（保留运算符）
+        # 使用正则：匹配两侧有空格的 AND/OR（不区分大小写）
+        tokens = re.split(r'\s+(AND|OR)\s+', raw_query, flags=re.IGNORECASE)
+
+        # tokens 现在交替为 [term, operator, term, operator, term, ...]
+        arxiv_parts = []
+        for token in tokens:
+            upper = token.upper()
+            if upper in ("AND", "OR"):
+                arxiv_parts.append(upper)
+            else:
+                # 清理术语：去除引号和首尾空格
+                term = token.strip().strip('"\'')
+                if not term:
+                    continue
+
+                # 将术语拆分为单词
+                words = term.split()
+                if len(words) == 1:
+                    # 单个词 → all:word
+                    arxiv_parts.append(f"all:{words[0]}")
+                else:
+                    # 多个词 → (all:word1 AND all:word2 AND ...)
+                    # 使用空格连接，urlencode 会自动转义
+                    sub_query = " AND ".join(
+                        f"all:{w}" for w in words
+                    )
+                    arxiv_parts.append(f"({sub_query})")
+
+        return " ".join(arxiv_parts)
+
     def _search_arxiv(self, keywords: List[str]) -> List[LiteratureItem]:
         """
         使用 arXiv 公开 API 检索文献。
@@ -246,12 +297,11 @@ class LiteratureSearcher:
         """
         results = []
 
-        # 构建查询字符串：用 AND 连接所有关键词
-        query_parts = []
-        for kw in keywords:
-            # 对每个关键词用 all 字段搜索
-            query_parts.append(f'all:"{kw}"')
-        query_string = " AND ".join(query_parts)
+        # 构建查询字符串
+        # 支持两种输入：
+        #   1. 含布尔运算符的复杂查询: "deep learning AND image classification"
+        #   2. 简单关键词短语: "deep learning"
+        query_string = self._build_arxiv_query(keywords)
 
         if not query_string:
             query_string = "all:research"
