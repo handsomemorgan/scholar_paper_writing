@@ -41,13 +41,15 @@ class LiteratureItem:
 
 
 class LiteratureSearcher:
-    """学术文献检索器 — 基于 arXiv 公开接口"""
+    """学术文献检索器 — 多数据源（arXiv → Web → Fallback）"""
 
     def __init__(self, config: Dict):
         search_config = config.get("literature_search", {})
         self.sources = search_config.get("sources", ["arxiv"])
         self.max_results = search_config.get("max_results_per_source", 10)
         self.timeout = search_config.get("timeout_seconds", 30)
+        # 是否启用浏览器网页搜索作为 fallback
+        self.enable_web_fallback = search_config.get("enable_web_fallback", True)
 
     def search(self, keywords: List[str]) -> List[LiteratureItem]:
         """
@@ -68,6 +70,8 @@ class LiteratureSearcher:
                     results = self._search_arxiv(keywords)
                 elif source == "cnki":
                     results = self._search_cnki(keywords)
+                elif source == "web":
+                    results = self._search_web_academic(keywords)
                 else:
                     logger.warning(f"Unknown source: {source}, skipping")
                     continue
@@ -87,6 +91,149 @@ class LiteratureSearcher:
 
         logger.info(f"Total unique results: {len(all_results)}")
         return all_results
+
+    def search_web_for_academic(
+        self, keywords: List[str]
+    ) -> List[LiteratureItem]:
+        """
+        通过浏览器搜索引擎查找学术文献。用作 arXiv 检索不足时的 fallback。
+
+        搜索策略：
+        - 在 DuckDuckGo 上搜索 "keyword research paper OR study OR survey"
+        - 从搜索结果中提取标题、摘要片段和 URL
+        - 尝试识别来自学术域名的结果（arxiv.org, semanticscholar.org 等）
+        """
+        return self._search_web_academic(keywords)
+
+    def _search_web_academic(self, keywords: List[str]) -> List[LiteratureItem]:
+        """
+        通过 DuckDuckGo 搜索引擎查找学术文献。
+
+        将多个关键词组合成搜索查询，尝试找到学术论文相关网页。
+        """
+        results: List[LiteratureItem] = []
+
+        # 构建学术搜索查询
+        query = " ".join(keywords)
+        # 添加学术相关限定词
+        academic_query = f"{query} research paper OR study OR survey"
+
+        logger.info(f"Web 学术搜索: '{academic_query}'")
+
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+
+            search_url = "https://html.duckduckgo.com/html/"
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+            }
+
+            response = requests.post(
+                search_url,
+                data={"q": academic_query},
+                headers=headers,
+                timeout=self.timeout,
+            )
+
+            if response.status_code != 200:
+                logger.warning(
+                    f"DuckDuckGo returned status {response.status_code}"
+                )
+                return results
+
+            soup = BeautifulSoup(response.text, "lxml")
+            result_items = soup.select(".result")
+
+            for item in result_items[:self.max_results]:
+                try:
+                    title_el = item.select_one(".result__title a")
+                    snippet_el = item.select_one(".result__snippet")
+                    link_el = item.select_one(".result__url")
+
+                    if not title_el:
+                        continue
+
+                    title = title_el.get_text(strip=True)
+                    snippet = (
+                        snippet_el.get_text(strip=True)
+                        if snippet_el
+                        else ""
+                    )
+                    url = (
+                        link_el.get("href", "")
+                        if link_el
+                        else ""
+                    )
+
+                    # 过滤明显不是学术内容的结果
+                    skip_patterns = [
+                        "wikipedia.org", "youtube.com", "amazon.",
+                        "reddit.com", "twitter.com", "facebook.",
+                        "instagram.", "pinterest.", "ebay.",
+                    ]
+                    if any(p in url.lower() for p in skip_patterns):
+                        continue
+
+                    if not title:
+                        continue
+
+                    # 尝试从 URL 或标题推断年份
+                    year = None
+                    import re
+                    year_match = re.search(r'(19|20)(\d{2})', title + url)
+                    if year_match:
+                        year = int(year_match.group(0))
+
+                    # 识别来源
+                    source = "web_search"
+                    if "arxiv.org" in url:
+                        source = "arxiv"
+                    elif "semanticscholar.org" in url:
+                        source = "web_semantic_scholar"
+                    elif "researchgate.net" in url:
+                        source = "web_researchgate"
+                    elif any(
+                        d in url
+                        for d in [".edu", "springer.com", "ieee.org", "acm.org"]
+                    ):
+                        source = "web_academic"
+
+                    results.append(
+                        LiteratureItem(
+                            title=title,
+                            authors=[],  # 网页搜索不提供作者信息
+                            year=year,
+                            journal="",  # 网页搜索不提供期刊信息
+                            abstract=snippet[:500] if snippet else "",
+                            citation_count=0,
+                            url=url,
+                            source=source,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error parsing web search result: {e}")
+                    continue
+
+            logger.info(
+                f"Web academic search returned {len(results)} results"
+            )
+
+        except ImportError as e:
+            logger.error(
+                f"Web search dependencies missing: {e}. "
+                "Install with: pip install requests beautifulsoup4 lxml"
+            )
+        except Exception as e:
+            logger.error(f"Web academic search error: {e}")
+
+        return results
 
     def _search_arxiv(self, keywords: List[str]) -> List[LiteratureItem]:
         """

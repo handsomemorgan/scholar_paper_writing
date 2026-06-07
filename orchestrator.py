@@ -258,14 +258,6 @@ class PaperWritingOrchestrator:
 
         literature_list = self.literature_searcher.search(keyword_result)
 
-        # 如果真实检索结果太少，生成模拟文献进行演示
-        if len(literature_list) < 5:
-            logger.warning("真实文献检索结果不足，补充模拟文献用于演示")
-            mock_lit = self.literature_searcher.generate_mock_literature(
-                keyword_result, count=8
-            )
-            literature_list.extend(mock_lit)
-
         pipeline_log["literature"] = {
             "total_found": len(literature_list),
             "high_quality": len(

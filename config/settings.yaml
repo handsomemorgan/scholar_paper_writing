@@ -52,6 +52,8 @@ literature_search:
   max_results_per_source: 10
   search_depth: "comprehensive"  # basic / comprehensive
   timeout_seconds: 30
+  enable_web_fallback: true  # arXiv 不足时自动使用浏览器网页搜索
+  min_literature_threshold: 5  # 最少文献数，低于此值触发下一级 fallback
 
 # 输出配置
 output:
