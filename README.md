@@ -121,6 +121,24 @@ DEEPSEEK_API_KEY=sk-your-deepseek-api-key
 
 ### 3. 运行
 
+#### 方式 A：Web 图形界面（推荐）
+
+启动后在浏览器中打开 **http://127.0.0.1:5000** 即可使用可视化界面：
+
+```bash
+python web_server.py
+```
+
+自定义端口：
+```bash
+python web_server.py --port 8080
+```
+
+> 打开浏览器访问 **http://127.0.0.1:5000**，在对话框中输入论文需求，点击"开始写作"即可。
+> 界面支持切换 DeepSeek / Claude / GPT 模型，以及星空、雨林、雪山、樱花、海洋五款背景主题。
+
+#### 方式 B：命令行模式
+
 ```bash
 # 交互式模式
 python main.py --interactive
