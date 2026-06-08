@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>论文自动写作助手</title>
+    <style>
+        /* ============================================================
+            CSS 变量 & 主题
+           ============================================================ */
+        :root {
+            --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            --bg-overlay: rgba(10, 10, 30, 0.85);
+            --surface: rgba(255, 255, 255, 0.06);
+            --surface-hover: rgba(255, 255, 255, 0.10);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #e0e0e0;
+            --text-secondary: #a0a0b0;
+            --accent: #64b5f6;
+            --accent-glow: rgba(100, 180, 246, 0.3);
+            --success: #81c784;
+            --warning: #ffb74d;
+            --danger: #e57373;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 主题: 雨林 Rainforest */
+        [data-theme="rainforest"] {
+            --bg-gradient: linear-gradient(135deg, #0a2a0a 0%, #1a4a1a 30%, #0d3320 60%, #1a3a1a 100%);
+            --bg-overlay: rgba(5, 20, 5, 0.85);
+            --accent: #66bb6a;
+            --accent-glow: rgba(100, 180, 100, 0.3);
+            --surface: rgba(255, 255, 255, 0.05);
+        }
+
+        /* 主题: 雪山 Snow Mountain */
+        [data-theme="snow"] {
+            --bg-gradient: linear-gradient(135deg, #b0bec5 0%, #cfd8dc 20%, #90a4ae 40%, #e0e0e0 70%, #a0b0c0 100%);
+            --bg-overlay: rgba(240, 245, 250, 0.92);
+            --text: #263238;
+            --text-secondary: #546e7a;
+            --surface: rgba(0, 0, 0, 0.04);
+            --surface-hover: rgba(0, 0, 0, 0.06);
+            --border: rgba(0, 0, 0, 0.06);
+            --accent: #37474f;
+            --accent-glow: rgba(55, 71, 79, 0.15);
+        }
+
+        /* 主题: 星空 Starry Sky */
+        [data-theme="starry"] {
+            --bg-gradient: linear-gradient(135deg, #0a0a2e 0%, #1a1050 30%, #0d1b3e 60%, #1a0a3a 100%);
+            --bg-overlay: rgba(5, 5, 25, 0.88);
+            --accent: #ab47bc;
+            --accent-glow: rgba(170, 70, 190, 0.35);
+            --surface: rgba(255, 255, 255, 0.05);
+        }
+
+        /* 主题: 樱花 Cherry Blossom */
+        [data-theme="sakura"] {
+            --bg-gradient: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 25%, #fce4ec 50%, #f8bbd0 75%, #fce4ec 100%);
+            --bg-overlay: rgba(255, 240, 245, 0.92);
+            --text: #4a2030;
+            --text-secondary: #8b6478;
+            --surface: rgba(255, 255, 255, 0.5);
+            --surface-hover: rgba(255, 255, 255, 0.65);
+            --border: rgba(200, 160, 180, 0.2);
+            --accent: #e91e63;
+            --accent-glow: rgba(233, 30, 99, 0.2);
+        }
+
+        /* 主题: 海洋 Ocean */
+        [data-theme="ocean"] {
+            --bg-gradient: linear-gradient(135deg, #002040 0%, #003366 25%, #004080 50%, #003366 75%, #001a33 100%);
+            --bg-overlay: rgba(0, 15, 35, 0.85);
+            --accent: #4fc3f7;
+            --accent-glow: rgba(80, 195, 247, 0.35);
+            --surface: rgba(255, 255, 255, 0.06);
+        }
+
+        /* ============================================================
+           全局样式
+           ============================================================ */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg-gradient);
+            background-attachment: fixed;
+            color: var(--text);
+            min-height: 100vh;
+            transition: background var(--transition);
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* 背景动态粒子 (仅深色主题) */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0;
+            transition: opacity var(--transition);
+        }
+        [data-theme="starry"] body::before {
+            opacity: 1;
+            background-image:
+                radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.6), transparent),
+                radial-gradient(1px 1px at 25% 45%, rgba(255,255,255,0.5), transparent),
+                radial-gradient(1.5px 1.5px at 40% 15%, rgba(255,255,255,0.7), transparent),
+                radial-gradient(1px 1px at 55% 60%, rgba(255,255,255,0.4), transparent),
+                radial-gradient(1.5px 1.5px at 70% 30%, rgba(255,255,255,0.6), transparent),
+                radial-gradient(1px 1px at 85% 50%, rgba(255,255,255,0.5), transparent),
+                radial-gradient(1px 1px at 15% 75%, rgba(255,255,255,0.4), transparent),
+                radial-gradient(1.5px 1.5px at 60% 85%, rgba(255,255,255,0.5), transparent),
+                radial-gradient(1px 1px at 90% 80%, rgba(255,255,255,0.4), transparent);
+        }
+
+        /* 主容器 */
+        .app-container {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 顶部栏 */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            margin-bottom: 16px;
+        }
+        .logo {
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            opacity: 0.8;
+        }
+        .top-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        /* 控件通用样式 */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all var(--transition);
+            white-space: nowrap;
+            font-family: inherit;
+        }
+        .btn:hover {
+            background: var(--surface-hover);
+            border-color: var(--accent);
+        }
+        .btn.active {
+            background: var(--accent-glow);
+            border-color: var(--accent);
+        }
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 0.78rem;
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            padding: 8px 32px 8px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-family: inherit;
+            transition: all var(--transition);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a0a0b0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+        }
+        select:hover {
+            border-color: var(--accent);
+        }
+
+        /* 主题选择器下拉 */
+        .theme-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .theme-options {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 6px;
+            background: var(--bg-overlay);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 4px;
+            z-index: 100;
+            min-width: 140px;
+        }
+        .theme-options.show { display: block; }
+        .theme-option {
+            display: block;
+            width: 100%;
+            padding: 8px 14px;
+            border: none;
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            text-align: left;
+            font-family: inherit;
+            transition: background 0.15s;
+        }
+        .theme-option:hover { background: var(--surface-hover); }
+        .theme-option .dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        /* 主卡片 */
+        .main-card {
+            background: var(--bg-overlay);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+        .card-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: -12px;
+        }
+
+        /* 输入区域 */
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.92rem;
+            font-family: inherit;
+            line-height: 1.7;
+            resize: vertical;
+            transition: border-color var(--transition);
+            outline: none;
+        }
+        textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        textarea::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+
+        .extra-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .extra-row input {
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.85rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color var(--transition);
+        }
+        .extra-row input:focus {
+            border-color: var(--accent);
+        }
+
+        .btn-primary {
+            padding: 12px 32px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            font-weight: 600;
+            font-size: 0.95rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+            font-family: inherit;
+        }
+        .btn-primary:hover {
+            filter: brightness(1.15);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: none;
+            box-shadow: none;
+        }
+
+        /* 进度区域 */
+        .progress-area {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .progress-area.active { display: flex; }
+
+        .phase-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .phase-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            transition: all var(--transition);
+            white-space: nowrap;
+        }
+        .phase-badge.running {
+            border-color: var(--accent);
+            background: var(--accent-glow);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .phase-badge.done {
+            border-color: var(--success);
+            color: var(--success);
+            background: rgba(129, 199, 132, 0.1);
+        }
+        .phase-badge.error {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .progress-message {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            min-height: 1.2em;
+        }
+
+        /* 结果区域 */
+        .result-area {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            padding: 20px;
+            border-radius: var(--radius);
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+        .result-area.active { display: flex; }
+
+        .result-area h3 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .result-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .result-link {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            background: var(--accent-glow);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: all var(--transition);
+        }
+        .result-link:hover {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .paper-preview {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 16px;
+            border-radius: var(--radius-sm);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            font-size: 0.85rem;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* 响应式 */
+        @media (max-width: 600px) {
+            .app-container { padding: 12px; }
+            .main-card { padding: 16px; }
+            .top-bar { flex-wrap: wrap; gap: 8px; }
+            textarea { min-height: 150px; }
+        }
+    </style>
+</head>
+<body data-theme="starry">
+<div class="app-container">
+    <!-- 顶部栏 -->
+    <div class="top-bar">
+        <div class="logo">PaperForge</div>
+        <div class="top-controls">
+            <!-- 模型选择器 -->
+            <select id="model-select" title="切换 API 模型">
+                <option value="deepseek">DeepSeek</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="openai">OpenAI GPT</option>
+            </select>
+            <!-- 主题选择器 -->
+            <div class="theme-dropdown">
+                <button class="btn btn-sm" id="theme-btn" onclick="toggleThemeMenu()">主题</button>
+                <div class="theme-options" id="theme-menu">
+                    <button class="theme-option" onclick="setTheme('starry')"><span class="dot" style="background:#ab47bc"></span>星空</button>
+                    <button class="theme-option" onclick="setTheme('rainforest')"><span class="dot" style="background:#66bb6a"></span>雨林</button>
+                    <button class="theme-option" onclick="setTheme('snow')"><span class="dot" style="background:#90a4ae"></span>雪山</button>
+                    <button class="theme-option" onclick="setTheme('sakura')"><span class="dot" style="background:#e91e63"></span>樱花</button>
+                    <button class="theme-option" onclick="setTheme('ocean')"><span class="dot" style="background:#4fc3f7"></span>海洋</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主卡片 -->
+    <div class="main-card">
+        <div class="card-title">论文自动写作助手</div>
+        <div class="card-subtitle">输入论文主题和要求，AI 将通过 7-Agent 流水线为您自动撰写出完整的学术论文</div>
+
+        <!-- 输入区 -->
+        <textarea id="requirements" placeholder="请在此输入您的论文要求...
+
+例如：
+请撰写一篇关于"基于大语言模型的多Agent学术写作系统"的学术论文。
+目标字数：8000字
+参考文献至少15篇
+包含中英文摘要、引言、相关工作、系统设计、实验评估...</textarea>
+
+        <div class="extra-row">
+            <input id="extra-instructions" placeholder="额外写作指令（可选，如：请使用APA引用格式）">
+            <button class="btn-primary" id="submit-btn" onclick="startGeneration()">开始写作</button>
+        </div>
+
+        <!-- 进度区 -->
+        <div class="progress-area" id="progress-area">
+            <div class="progress-message" id="progress-msg">准备中...</div>
+            <div class="phase-list">
+                <span class="phase-badge" data-phase="phase1">分类</span>
+                <span class="phase-badge" data-phase="phase2">模板</span>
+                <span class="phase-badge" data-phase="phase3">关键词</span>
+                <span class="phase-badge" data-phase="phase4">文献</span>
+                <span class="phase-badge" data-phase="phase5">分析</span>
+                <span class="phase-badge" data-phase="phase6">写作</span>
+                <span class="phase-badge" data-phase="phase6b">英文</span>
+                <span class="phase-badge" data-phase="phase7">校验</span>
+            </div>
+        </div>
+
+        <!-- 结果区 -->
+        <div class="result-area" id="result-area">
+            <h3>论文生成完成!</h3>
+            <div class="result-links" id="result-links"></div>
+            <details>
+                <summary style="cursor:pointer;font-size:0.85rem;color:var(--accent)">查看论文预览</summary>
+                <div class="paper-preview" id="paper-preview"></div>
+            </details>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// 主题管理
+// ============================================================
+let currentTheme = localStorage.getItem('paperforge-theme') || 'starry';
+document.body.setAttribute('data-theme', currentTheme);
+
+function setTheme(theme) {
+    currentTheme = theme;
+    document.body.setAttribute('data-theme', theme);
+    localStorage.setItem('paperforge-theme', theme);
+    document.getElementById('theme-menu').classList.remove('show');
+}
+
+function toggleThemeMenu() {
+    document.getElementById('theme-menu').classList.toggle('show');
+}
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.theme-dropdown')) {
+        document.getElementById('theme-menu').classList.remove('show');
+    }
+});
+
+// ============================================================
+// 模型可用性检查
+// ============================================================
+async function checkModels() {
+    try {
+        const resp = await fetch('/api/models');
+        const data = await resp.json();
+        const select = document.getElementById('model-select');
+        data.models.forEach(m => {
+            const opt = select.querySelector(`option[value="${m.id}"]`);
+            if (opt) {
+                if (!m.available) {
+                    opt.textContent = `${m.name} (未配置)`;
+                }
+                opt.disabled = !m.available;
+            }
+        });
+        // 如果 DeepSeek 不可用，选择第一个可用的
+        if (!data.models.find(m => m.id === 'deepseek')?.available) {
+            const first = data.models.find(m => m.available);
+            if (first) select.value = first.id;
+        }
+    } catch (e) {}
+}
+checkModels();
+
+// ============================================================
+// 论文生成
+// ============================================================
+async function startGeneration() {
+    const requirements = document.getElementById('requirements').value.trim();
+    if (!requirements) {
+        alert('请先输入论文要求');
+        return;
+    }
+
+    const provider = document.getElementById('model-select').value;
+    const extraInstructions = document.getElementById('extra-instructions').value.trim();
+
+    // 切换 UI 状态
+    const submitBtn = document.getElementById('submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '生成中...';
+
+    const progressArea = document.getElementById('progress-area');
+    progressArea.classList.add('active');
+    document.getElementById('result-area').classList.remove('active');
+
+    // 重置进度
+    document.querySelectorAll('.phase-badge').forEach(b => {
+        b.classList.remove('running', 'done', 'error');
+    });
+
+    try {
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                requirements,
+                provider,
+                extra_instructions: extraInstructions,
+            }),
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const event = JSON.parse(line.slice(6));
+                        handleSSEEvent(event);
+                    } catch (e) {}
+                }
+            }
+        }
+    } catch (e) {
+        document.getElementById('progress-msg').textContent = '发生错误: ' + e.message;
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '开始写作';
+    }
+}
+
+function handleSSEEvent(event) {
+    const msgEl = document.getElementById('progress-msg');
+    const type = event.type;
+
+    if (type === 'progress') {
+        // 更新阶段徽章
+        const badge = document.querySelector(`[data-phase="${event.phase}"]`);
+        if (badge) {
+            badge.classList.remove('running', 'done', 'error');
+            if (event.status === 'running') {
+                badge.classList.add('running');
+            } else if (event.status === 'done') {
+                badge.classList.remove('running');
+                badge.classList.add('done');
+            }
+        }
+        msgEl.textContent = event.message;
+
+    } else if (type === 'error') {
+        msgEl.textContent = '错误: ' + event.message;
+        document.querySelectorAll('.phase-badge.running').forEach(b => {
+            b.classList.remove('running');
+            b.classList.add('error');
+        });
+
+    } else if (type === 'result') {
+        msgEl.textContent = '全部完成!';
+        document.querySelectorAll('.phase-badge').forEach(b => b.classList.add('done'));
+
+        // 显示结果
+        const resultArea = document.getElementById('result-area');
+        resultArea.classList.add('active');
+
+        // 构建链接
+        const linksDiv = document.getElementById('result-links');
+        linksDiv.innerHTML = '';
+        if (event.output_dir) {
+            const dir = event.output_dir;
+            linksDiv.innerHTML += `<a class="result-link" href="/api/paper/${dir}/paper.md" target="_blank">查看中文论文</a>`;
+            linksDiv.innerHTML += `<a class="result-link" href="/api/paper/${dir}/paper_en.md" target="_blank">查看英文论文</a>`;
+            linksDiv.innerHTML += `<a class="result-link" href="/api/paper/${dir}/metadata.json" target="_blank">元数据</a>`;
+
+            // 加载预览
+            fetch(`/api/paper/${dir}/paper.md`)
+                .then(r => r.text())
+                .then(text => {
+                    document.getElementById('paper-preview').textContent =
+                        text.substring(0, 3000) + '\n\n... (预览截断，点击链接查看完整论文)';
+                })
+                .catch(() => {});
+        }
+    }
+}
+</script>
+</body>
+</html>

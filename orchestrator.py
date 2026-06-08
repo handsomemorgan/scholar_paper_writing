@@ -40,7 +40,7 @@ class DeepSeekLLMClient:
     兼容原 LLMClient 的全部接口 (chat / chat_with_json_output)，
     各 Agent 无需修改即可直接使用。
     """
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: str = None, model: str = "deepseek-chat"):
         # 从环境变量获取 API Key
         self.api_key = os.getenv("DEEPSEEK_API_KEY")
         if not self.api_key:
@@ -48,7 +48,7 @@ class DeepSeekLLMClient:
 
         # DeepSeek API 基础配置
         self.base_url = "https://api.deepseek.com/v1/chat/completions"
-        self.model = "deepseek-chat"
+        self.model = model
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -139,6 +139,38 @@ class DeepSeekLLMClient:
         import json as _json
         return _json.loads(response_text.strip())
 
+
+# ===================== LLM 客户端工厂 =====================
+def create_llm_client(provider: str = "deepseek", config_path: Optional[str] = None, model: Optional[str] = None):
+    """创建 LLM 客户端（支持多后端切换）
+
+    Args:
+        provider: "deepseek" | "anthropic" | "openai"
+        config_path: 配置文件路径
+        model: 模型名称（可选，覆盖默认值）
+
+    Returns:
+        LLM 客户端实例（兼容 chat / chat_with_json_output 接口）
+    """
+    if provider == "deepseek":
+        return DeepSeekLLMClient(config_path=config_path, model=model or "deepseek-chat")
+    elif provider in ("anthropic", "openai"):
+        # 尝试使用 utils/llm_client 中的通用客户端
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from utils.llm_client import LLMClient
+            client = LLMClient(config_path=config_path or "config/settings.yaml")
+            if model:
+                client.model = model
+            return client
+        except ImportError:
+            raise ValueError(f"使用 {provider} 需要安装对应 SDK: pip install anthropic openai")
+    else:
+        raise ValueError(f"不支持的 LLM 提供商: {provider}。可选: deepseek, anthropic, openai")
+
+# 导入 sys（提前引用）
+import sys
+
 # ===================== 原有 Agent 导入保持不变 =====================
 from agents.classifier import PaperClassifier
 from agents.rag_retriever import RAGFormatRetriever
@@ -154,16 +186,17 @@ class PaperWritingOrchestrator:
     协调7个Agent完成从课程要求到最终论文的全流程。
     """
 
-    def __init__(self, config_path: str = "config/settings.yaml"):
+    def __init__(self, config_path: str = "config/settings.yaml",
+                 provider: str = "deepseek", model: Optional[str] = None):
         logger.info("=" * 60)
         logger.info("论文自动写作助手 (Paper Writing Agent System)")
         logger.info("=" * 60)
 
         self.config_path = config_path
 
-        # 初始化LLM客户端 —— 替换为 DeepSeek
-        logger.info("初始化 DeepSeek LLM 客户端...")
-        self.llm = DeepSeekLLMClient(config_path)  # 核心改动：替换 LLM 客户端
+        # 初始化LLM客户端 —— 支持多后端切换
+        logger.info(f"初始化 LLM 客户端 ({provider})...")
+        self.llm = create_llm_client(provider=provider, config_path=config_path, model=model)
 
         # 初始化所有Agent
         logger.info("初始化 7 个 Agent...")
@@ -184,6 +217,7 @@ class PaperWritingOrchestrator:
         output_dir: Optional[str] = None,
         extra_instructions: str = "",
         verbose: bool = True,
+        progress_callback: Optional[callable] = None,
     ) -> Dict[str, Any]:
         """
         执行完整的论文自动写作流程。
@@ -193,6 +227,7 @@ class PaperWritingOrchestrator:
             output_dir: 输出目录（可选，默认使用配置中的output目录）
             extra_instructions: 额外的写作指令
             verbose: 是否输出详细信息
+            progress_callback: 进度回调函数，签名: callback(phase, status, message, details_dict)
 
         Returns:
             包含整个流程结果的字典：
@@ -206,6 +241,10 @@ class PaperWritingOrchestrator:
         start_time = time.time()
         pipeline_log = {}
 
+        def _notify(phase, status, message, **details):
+            if progress_callback:
+                progress_callback(phase, status, message, details)
+
         # =============================================
         # Phase 1: 论文类型分类
         # =============================================
@@ -213,8 +252,11 @@ class PaperWritingOrchestrator:
         logger.info("Phase 1: 论文类型分类 (Agent 1)")
         logger.info("=" * 60)
 
+        _notify("phase1", "running", "正在识别论文类型...")
         classification = self.classifier.classify(requirements)
         pipeline_log["classification"] = classification
+        _notify("phase1", "done", f"类型: {classification['category_name']}",
+                category=classification['category_name'], confidence=classification['confidence'])
         logger.info(f"  类型: {classification['category_name']}")
         logger.info(f"  置信度: {classification['confidence']}")
         logger.info(f"  理由: {classification['reasoning']}")
@@ -226,12 +268,15 @@ class PaperWritingOrchestrator:
         logger.info("Phase 2: RAG格式模板检索 (Agent 2)")
         logger.info("=" * 60)
 
+        _notify("phase2", "running", "正在检索格式模板...")
         format_template = self.rag_retriever.retrieve(classification)
         pipeline_log["format_template"] = {
             "category_id": format_template["category_id"],
             "retrieval_method": format_template["retrieval_method"],
             "template_length": format_template["template_length"],
         }
+        _notify("phase2", "done", f"模板: {format_template['category_name']}",
+                category=format_template['category_name'])
         logger.info(f"  检索方法: {format_template['retrieval_method']}")
         logger.info(f"  模板长度: {format_template['template_length']} 字符")
 
@@ -242,6 +287,7 @@ class PaperWritingOrchestrator:
         logger.info("Phase 3: 关键词提取 (Agent 3)")
         logger.info("=" * 60)
 
+        _notify("phase3", "running", "正在提取关键词...")
         keyword_result = self.keyword_extractor.extract(requirements)
         pipeline_log["keywords"] = {
             "primary_count": len(keyword_result.get("primary_keywords", [])),
@@ -252,6 +298,8 @@ class PaperWritingOrchestrator:
             "search_queries": len(keyword_result.get("search_queries", [])),
         }
         all_kw = self.keyword_extractor.get_all_keywords_flat(keyword_result)
+        _notify("phase3", "done", f"提取 {len(all_kw)} 个关键词",
+                keywords=all_kw[:5])
         logger.info(f"  关键词: {', '.join(all_kw[:10])}")
         logger.info(f"  检索查询数: {len(keyword_result.get('search_queries', []))}")
 
@@ -262,6 +310,7 @@ class PaperWritingOrchestrator:
         logger.info("Phase 4: 文献检索 (Agent 4)")
         logger.info("=" * 60)
 
+        _notify("phase4", "running", "正在检索学术文献...")
         literature_list = self.literature_searcher.search(keyword_result)
 
         pipeline_log["literature"] = {
@@ -270,6 +319,8 @@ class PaperWritingOrchestrator:
                 self.literature_searcher.filter_high_quality(literature_list)
             ),
         }
+        _notify("phase4", "done", f"检索到 {len(literature_list)} 篇文献",
+                count=len(literature_list))
         logger.info(f"  检索到 {len(literature_list)} 篇文献")
 
         # =============================================
@@ -279,6 +330,7 @@ class PaperWritingOrchestrator:
         logger.info("Phase 5: 文献分析与创新方向 (Agent 5)")
         logger.info("=" * 60)
 
+        _notify("phase5", "running", "正在分析文献、发现创新方向...")
         analysis_result = self.literature_analyzer.analyze(
             literature_list, requirements, keyword_result
         )
@@ -289,6 +341,8 @@ class PaperWritingOrchestrator:
             ),
         }
         innovation = analysis_result.get("innovation_proposal", {})
+        _notify("phase5", "done", f"创新方向: {innovation.get('title', 'N/A')}",
+                gaps=len(analysis_result.get('research_gaps', [])))
         logger.info(f"  创新方向: {innovation.get('title', 'N/A')}")
         logger.info(f"  研究空白数: {len(analysis_result.get('research_gaps', []))}")
 
@@ -299,6 +353,7 @@ class PaperWritingOrchestrator:
         logger.info("Phase 6: 论文撰写 (Agent 6)")
         logger.info("=" * 60)
 
+        _notify("phase6", "running", "正在撰写中文论文（耗时较长）...")
         paper = self.paper_writer.write(
             requirements=requirements,
             format_template=format_template,
@@ -311,6 +366,8 @@ class PaperWritingOrchestrator:
             "paper_length": len(paper),
             "paper_lines": len(paper.split("\n")),
         }
+        _notify("phase6", "done", f"中文论文完成 ({len(paper)} 字符)",
+                length=len(paper))
         logger.info(f"  论文长度: {len(paper)} 字符")
 
         # =============================================
@@ -320,6 +377,7 @@ class PaperWritingOrchestrator:
         logger.info("Phase 6b: 英文版论文撰写 (Agent 6 - English)")
         logger.info("=" * 60)
 
+        _notify("phase6b", "running", "正在撰写英文论文...")
         paper_en = self.paper_writer.write_english(
             chinese_paper=paper,
             requirements=requirements,
@@ -333,6 +391,7 @@ class PaperWritingOrchestrator:
             "paper_length": len(paper_en),
             "paper_lines": len(paper_en.split("\n")),
         }
+        _notify("phase6b", "done", f"英文论文完成 ({len(paper_en)} 字符)")
         logger.info(f"  英文论文长度: {len(paper_en)} 字符")
 
         # =============================================
@@ -342,6 +401,7 @@ class PaperWritingOrchestrator:
         logger.info("Phase 7: 格式校验 (Agent 7)")
         logger.info("=" * 60)
 
+        _notify("phase7", "running", "正在校验论文格式...")
         check_report = self.format_checker.check(
             paper=paper,
             template_content=format_template["template_content"],
@@ -352,6 +412,8 @@ class PaperWritingOrchestrator:
             "is_compliant": check_report.get("is_compliant", False),
             "deviations": len(check_report.get("format_deviations", [])),
         }
+        _notify("phase7", "done", f"格式评分: {check_report.get('overall_score', 'N/A')}/100",
+                score=check_report.get('overall_score', 0))
         logger.info(f"  格式评分: {check_report.get('overall_score', 'N/A')}/100")
         logger.info(f"  合规: {'是' if check_report.get('is_compliant') else '否'}")
         logger.info(
