@@ -20,8 +20,9 @@ PyYAML>=6.0
 python-docx>=1.0.0
 markdown>=3.5.0
 
-# Utilities
+# CLI & Utilities
 tiktoken>=0.5.0
 rich>=13.0.0
 click>=8.1.0
 tenacity>=8.0.0
+python-dotenv>=1.0.0

@@ -88,19 +88,36 @@ scholar_paper_writing/
 ### 1. 安装依赖
 
 ```bash
+# 克隆仓库
+git clone https://github.com/handsomemorgan/scholar_paper_writing.git
+cd scholar_paper_writing
+
+# 创建虚拟环境（推荐）
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 安装依赖
 pip install -r requirements.txt
 ```
 
 ### 2. 设置API密钥
 
-```bash
-# 使用Anthropic Claude（推荐）
-export ANTHROPIC_API_KEY="your-api-key"
+本项目默认使用 **DeepSeek API** 作为 LLM 后端。
 
-# 或使用OpenAI兼容接口
-# 修改 config/settings.yaml 中的 provider 为 "openai"
-export OPENAI_API_KEY="your-api-key"
+```bash
+# 复制环境变量模板
+cp .env.example .env
+
+# 编辑 .env 文件，填入你的 DeepSeek API Key
+# 获取地址: https://platform.deepseek.com/api_keys
 ```
+
+`.env` 文件内容：
+```bash
+DEEPSEEK_API_KEY=sk-your-deepseek-api-key
+```
+
+也可以使用其他 LLM 后端，详见 [配置说明](#配置说明)。
 
 ### 3. 运行
 
@@ -109,7 +126,7 @@ export OPENAI_API_KEY="your-api-key"
 python main.py --interactive
 
 # 从文件读取论文要求
-python main.py --input requirements.txt
+python main.py --input requirements_system_paper.txt
 
 # 指定输出目录和额外指令
 python main.py --input requirements.txt --output ./my_paper/ --extra "请使用APA引用格式，字数5000左右"
@@ -118,7 +135,8 @@ python main.py --input requirements.txt --output ./my_paper/ --extra "请使用A
 ### 4. 查看输出
 
 生成的文件保存在 `output/<时间戳>/` 目录下：
-- `paper.md` — 完整论文
+- `paper.md` — 完整论文（Markdown 格式）
+- `paper_en.md` — 英文版本（如启用）
 - `metadata.json` — 流程元数据
 - `format_check_report.json` — 格式校验报告
 
@@ -152,23 +170,35 @@ python main.py --input requirements.txt --output ./my_paper/ --extra "请使用A
 编辑 `config/settings.yaml` 自定义系统行为：
 
 ```yaml
+# LLM 配置（默认使用 DeepSeek，由 orchestrator 直接调用）
 llm:
-  provider: "anthropic"        # 可选: anthropic / openai
-  model: "claude-sonnet-4-6"   # 模型名称
-  temperature: 0.7             # 生成温度
+  provider: "anthropic"        # 备选: anthropic / openai
+  model: "claude-sonnet-4-6"
+  api_key_env: "ANTHROPIC_API_KEY"
+  temperature: 0.7
 
+# 文献检索配置
 literature_search:
   sources:
-    - "arxiv"
-    - "cnki"
-  max_results_per_source: 10   # 每个数据源最大结果数
+    - "arxiv"                  # arXiv 公开 API（免费，无需注册）
+  max_results_per_source: 30
+  search_depth: "comprehensive"
+  enable_web_fallback: true    # arXiv 不足时自动网页搜索
+  min_literature_threshold: 10
 
+# 输出配置
 output:
   formats:
     - "markdown"
     - "docx"
-  timestamp_dir: true           # 按时间戳创建输出子目录
+  timestamp_dir: true
 ```
+
+### 切换 LLM 后端
+
+- **DeepSeek**（默认）：在 `.env` 中设置 `DEEPSEEK_API_KEY`，无需额外配置
+- **Anthropic Claude**：在 `.env` 中设置 `ANTHROPIC_API_KEY`，需 `pip install anthropic`
+- **OpenAI**：在 `.env` 中设置 `OPENAI_API_KEY`，需 `pip install openai`
 
 ## 扩展指南
 
@@ -190,11 +220,12 @@ output:
 
 ## 依赖项
 
-- **LLM**: anthropic / openai SDK
+- **LLM**: DeepSeek API（通过 `requests`）+ openai SDK（备选）
 - **RAG**: chromadb + sentence-transformers
 - **Web搜索**: arXiv API（标准库）+ beautifulsoup4 + requests
 - **文档处理**: PyYAML + python-docx + markdown
 - **CLI**: click + rich
+- **其他**: tiktoken + tenacity + lxml + python-dotenv
 
 ## 注意事项
 

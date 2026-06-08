@@ -136,9 +136,8 @@ class RAGFormatRetriever:
     def _index_templates(self):
         """将模板索引到向量数据库（带HG镜像和超时保护）"""
         try:
-            # 国内用户使用 HuggingFace 镜像，避免连接超时
-            if "HF_ENDPOINT" not in os.environ:
-                os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+            # 国内用户如需使用 HuggingFace 镜像，请在 .env 中设置:
+            #   export HF_ENDPOINT="https://hf-mirror.com"
 
             from sentence_transformers import SentenceTransformer
 
