@@ -24,6 +24,10 @@ ARXIV_API_URL = "http://export.arxiv.org/api/query"
 # arXiv 要求的速率限制：至少 3 秒一次请求
 ARXIV_RATE_LIMIT = 3.0
 
+# Web 搜索速率限制：每次请求至少间隔 2 秒（避免 DuckDuckGo 202）
+WEB_SEARCH_RATE_LIMIT = 2.0
+_last_web_search_time = 0
+
 
 @dataclass
 class LiteratureItem:
@@ -107,131 +111,101 @@ class LiteratureSearcher:
 
     def _search_web_academic(self, keywords: List[str]) -> List[LiteratureItem]:
         """
-        通过 DuckDuckGo 搜索引擎查找学术文献。
+        通过 Semantic Scholar API 查找学术文献。
 
-        将多个关键词组合成搜索查询，尝试找到学术论文相关网页。
+        Semantic Scholar 免费开放，无需 API Key。
+        如遇速率限制，延迟后重试一次。
         """
         results: List[LiteratureItem] = []
-
-        # 构建学术搜索查询
         query = " ".join(keywords)
-        # 添加学术相关限定词
-        academic_query = f"{query} research paper OR study OR survey"
 
-        logger.info(f"Web 学术搜索: '{academic_query}'")
+        # 快速跳过：如果 S2 在最近 1 小时内被限流，不再尝试
+        global _last_web_search_time
+        if _last_web_search_time > time.time():
+            logger.info(f"  S2 已限流，跳过 Web 搜索（arXiv 为主力数据源）")
+            return results
+
+        logger.info(f"Semantic Scholar 搜索: '{query[:100]}...'")
 
         try:
             import requests
-            from bs4 import BeautifulSoup
 
-            search_url = "https://html.duckduckgo.com/html/"
+            # 速率限制：至少间隔 5 秒（S2 非常严格）
+            elapsed = time.time() - _last_web_search_time
+            min_gap = 5.0
+            if elapsed < min_gap:
+                wait = min_gap - elapsed + 1  # +1s buffer
+                logger.info(f"  S2 速率限制等待 {wait:.1f}s...")
+                time.sleep(wait)
+
+            search_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+            params = {
+                "query": query,
+                "limit": min(self.max_results, 30),
+                "fields": "title,authors,year,abstract,url,externalIds,journal",
+            }
             headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-                "Accept": "text/html,application/xhtml+xml",
-                "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+                "User-Agent": "Mozilla/5.0 (compatible; PaperWriter/1.0; mailto:research@example.com)",
+                "Accept": "application/json",
             }
 
-            response = requests.post(
-                search_url,
-                data={"q": academic_query},
-                headers=headers,
-                timeout=self.timeout,
+            response = requests.get(
+                search_url, params=params, headers=headers, timeout=self.timeout
             )
+            _last_web_search_time = time.time()
 
-            if response.status_code != 200:
-                logger.warning(
-                    f"DuckDuckGo returned status {response.status_code}"
-                )
+            # 429 → S2 不可用，快速跳过（arXiv 已足够）
+            if response.status_code == 429:
+                logger.warning("  S2 rate limited, skipping further S2 searches")
+                # 设置标记：后续请求直接跳过 S2
+                _last_web_search_time = time.time() + 3600  # 1h 内不再尝试
                 return results
 
-            soup = BeautifulSoup(response.text, "lxml")
-            result_items = soup.select(".result")
+            if response.status_code != 200:
+                logger.warning(f"  S2 returned {response.status_code}, skipping")
+                return results
 
-            for item in result_items[:self.max_results]:
+            data = response.json()
+            papers = data.get("data", [])
+            logger.info(f"  S2 返回 {len(papers)} 条")
+
+            for paper in papers:
                 try:
-                    title_el = item.select_one(".result__title a")
-                    snippet_el = item.select_one(".result__snippet")
-                    link_el = item.select_one(".result__url")
-
-                    if not title_el:
-                        continue
-
-                    title = title_el.get_text(strip=True)
-                    snippet = (
-                        snippet_el.get_text(strip=True)
-                        if snippet_el
-                        else ""
-                    )
-                    url = (
-                        link_el.get("href", "")
-                        if link_el
-                        else ""
-                    )
-
-                    # 过滤明显不是学术内容的结果
-                    skip_patterns = [
-                        "wikipedia.org", "youtube.com", "amazon.",
-                        "reddit.com", "twitter.com", "facebook.",
-                        "instagram.", "pinterest.", "ebay.",
-                    ]
-                    if any(p in url.lower() for p in skip_patterns):
-                        continue
-
+                    title = paper.get("title", "")
                     if not title:
                         continue
-
-                    # 尝试从 URL 或标题推断年份
-                    year = None
-                    import re
-                    year_match = re.search(r'(19|20)(\d{2})', title + url)
-                    if year_match:
-                        year = int(year_match.group(0))
-
-                    # 识别来源
-                    source = "web_search"
-                    if "arxiv.org" in url:
-                        source = "arxiv"
-                    elif "semanticscholar.org" in url:
-                        source = "web_semantic_scholar"
-                    elif "researchgate.net" in url:
-                        source = "web_researchgate"
-                    elif any(
-                        d in url
-                        for d in [".edu", "springer.com", "ieee.org", "acm.org"]
-                    ):
-                        source = "web_academic"
+                    authors = [
+                        a.get("name", "") for a in paper.get("authors", []) if a.get("name")
+                    ]
+                    year = paper.get("year")
+                    abstract = paper.get("abstract", "") or ""
+                    external_ids = paper.get("externalIds", {}) or {}
+                    url = (
+                        f"https://doi.org/{external_ids['DOI']}" if external_ids.get("DOI")
+                        else f"https://api.semanticscholar.org/paper/{paper.get('paperId', '')}"
+                    )
+                    journal = (paper.get("journal") or {}).get("name", "") if paper.get("journal") else ""
 
                     results.append(
                         LiteratureItem(
                             title=title,
-                            authors=[],  # 网页搜索不提供作者信息
+                            authors=authors[:10],
                             year=year,
-                            journal="",  # 网页搜索不提供期刊信息
-                            abstract=snippet[:500] if snippet else "",
+                            journal=journal,
+                            abstract=abstract[:500],
                             citation_count=0,
                             url=url,
-                            source=source,
+                            source="semantic_scholar",
                         )
                     )
                 except Exception as e:
-                    logger.warning(f"Error parsing web search result: {e}")
+                    logger.warning(f"  Error parsing S2 result: {e}")
                     continue
 
-            logger.info(
-                f"Web academic search returned {len(results)} results"
-            )
-
-        except ImportError as e:
-            logger.error(
-                f"Web search dependencies missing: {e}. "
-                "Install with: pip install requests beautifulsoup4 lxml"
-            )
+        except ImportError:
+            logger.error("requests not installed. pip install requests")
         except Exception as e:
-            logger.error(f"Web academic search error: {e}")
+            logger.error(f"Semantic Scholar search error: {e}")
 
         return results
 
@@ -254,6 +228,14 @@ class LiteratureSearcher:
 
         # 先用 " AND " 连接所有关键词（用户可能传多个）
         raw_query = " AND ".join(keywords)
+
+        # 安全检查：arXiv API 不支持中文查询，发出警告
+        import re as _re_build
+        if _re_build.search(r'[一-鿿]', raw_query):
+            logger.warning(
+                f"arXiv 查询包含中文字符，可能返回 0 条结果！"
+                f"请使用英文关键词。查询: '{raw_query[:80]}...'"
+            )
 
         # 按 AND/OR 分割（保留运算符）
         # 使用正则：匹配两侧有空格的 AND/OR（不区分大小写）
@@ -286,7 +268,25 @@ class LiteratureSearcher:
 
         return " ".join(arxiv_parts)
 
-    def _search_arxiv(self, keywords: List[str]) -> List[LiteratureItem]:
+    def search_arxiv_paginated(
+        self, keywords: List[str], start: int = 0, max_results: int = None
+    ) -> List[LiteratureItem]:
+        """
+        分页检索 arXiv —— 支持大量文献收集。
+
+        Args:
+            keywords: 检索关键词列表
+            start: 分页起始位置（用于翻页）
+            max_results: 每页结果数（默认使用配置值）
+
+        Returns:
+            该页的文献列表
+        """
+        return self._search_arxiv(keywords, start=start, max_results=max_results)
+
+    def _search_arxiv(
+        self, keywords: List[str], start: int = 0, max_results: int = None
+    ) -> List[LiteratureItem]:
         """
         使用 arXiv 公开 API 检索文献。
 
@@ -296,11 +296,10 @@ class LiteratureSearcher:
         速率限制：建议至少间隔 3 秒，请遵守 arXiv 使用政策。
         """
         results = []
+        if max_results is None:
+            max_results = self.max_results
 
         # 构建查询字符串
-        # 支持两种输入：
-        #   1. 含布尔运算符的复杂查询: "deep learning AND image classification"
-        #   2. 简单关键词短语: "deep learning"
         query_string = self._build_arxiv_query(keywords)
 
         if not query_string:
@@ -309,13 +308,13 @@ class LiteratureSearcher:
         # 构建请求参数
         params = {
             "search_query": query_string,
-            "start": 0,
-            "max_results": self.max_results,
+            "start": start,
+            "max_results": max_results,
             "sortBy": "relevance",
         }
         url = f"{ARXIV_API_URL}?{urllib.parse.urlencode(params)}"
 
-        logger.info(f"arXiv API 请求: {url}")
+        logger.info(f"arXiv API 请求 (start={start}, max={max_results}): {url[:200]}")
 
         try:
             # 速率限制

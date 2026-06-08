@@ -49,11 +49,35 @@ literature_search:
   sources:
     - "arxiv"        # 主要数据源：arXiv 公开 API（免费开放）
     # - "cnki"       # 备用数据源：中国知网（需依赖 beautifulsoup4 + lxml）
-  max_results_per_source: 10
+  max_results_per_source: 30
   search_depth: "comprehensive"  # basic / comprehensive
   timeout_seconds: 30
-  enable_web_fallback: true  # arXiv 不足时自动使用浏览器网页搜索
-  min_literature_threshold: 5  # 最少文献数，低于此值触发下一级 fallback
+  enable_web_fallback: true  # arXiv 收集完毕后始终进行浏览器网页搜索
+  min_literature_threshold: 10  # 最少文献数，低于此值触发下一级 fallback
+
+# 字数-文献收集映射（由 parse_word_count + get_literature_target 驱动）
+word_count_tiers:
+  short:       # < 5,000 字
+    target: 10
+    arxiv_pages: 2
+    expansions: 1
+  medium:      # 5,000-20,000 字
+    target: 15
+    arxiv_pages: 2
+    expansions: 2
+  long:        # 20,000-50,000 字
+    target: 30
+    arxiv_pages: 4
+    expansions: 3
+  ultra:       # > 50,000 字
+    target: 50
+    arxiv_pages: 6
+    expansions: 5
+
+# 字数校验配置
+word_count_check:
+  tolerance: 0.20        # ±20% 容差
+  min_references: 10     # 最低参考文献数量
 
 # 输出配置
 output:

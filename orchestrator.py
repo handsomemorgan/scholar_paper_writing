@@ -7,6 +7,11 @@
   → Agent 6 (论文撰写) → Agent 7 (格式校验)
 
 每个Agent的输出是下一个Agent的输入，形成一个完整的流水线。
+
+字数自适应：
+  - 自动从需求中解析目标字数
+  - 按字数级别动态调整文献收集量（10/30/50篇）
+  - 论文撰写后严格校验字数（±20%容差）
 """
 
 import os
@@ -248,6 +253,7 @@ class PaperWritingOrchestrator:
         }
         all_kw = self.keyword_extractor.get_all_keywords_flat(keyword_result)
         logger.info(f"  关键词: {', '.join(all_kw[:10])}")
+        logger.info(f"  检索查询数: {len(keyword_result.get('search_queries', []))}")
 
         # =============================================
         # Phase 4: 文献检索
@@ -305,7 +311,29 @@ class PaperWritingOrchestrator:
             "paper_length": len(paper),
             "paper_lines": len(paper.split("\n")),
         }
-        logger.info(f"  论文长度: {len(paper)} 字符, {len(paper.split(chr(10)))} 行")
+        logger.info(f"  论文长度: {len(paper)} 字符")
+
+        # =============================================
+        # Phase 6b: 英文版论文撰写
+        # =============================================
+        logger.info("\n" + "=" * 60)
+        logger.info("Phase 6b: 英文版论文撰写 (Agent 6 - English)")
+        logger.info("=" * 60)
+
+        paper_en = self.paper_writer.write_english(
+            chinese_paper=paper,
+            requirements=requirements,
+            format_template=format_template,
+            keyword_result=keyword_result,
+            literature_list=literature_list,
+            analysis_result=analysis_result,
+            extra_instructions=extra_instructions,
+        )
+        pipeline_log["writing_en"] = {
+            "paper_length": len(paper_en),
+            "paper_lines": len(paper_en.split("\n")),
+        }
+        logger.info(f"  英文论文长度: {len(paper_en)} 字符")
 
         # =============================================
         # Phase 7: 格式校验
@@ -339,10 +367,15 @@ class PaperWritingOrchestrator:
 
         os.makedirs(output_dir, exist_ok=True)
 
-        # 保存论文
+        # 保存中文论文
         paper_path = os.path.join(output_dir, "paper.md")
         with open(paper_path, "w", encoding="utf-8") as f:
             f.write(paper)
+
+        # 保存英文论文
+        paper_en_path = os.path.join(output_dir, "paper_en.md")
+        with open(paper_en_path, "w", encoding="utf-8") as f:
+            f.write(paper_en)
 
         # 保存元数据
         metadata = {
@@ -350,7 +383,9 @@ class PaperWritingOrchestrator:
             "category": classification["category_name"],
             "category_id": classification["category_id"],
             "paper_title": self._extract_title(paper),
+            "paper_title_en": self._extract_title(paper_en),
             "paper_length": len(paper),
+            "paper_length_en": len(paper_en),
             "format_score": check_report.get("overall_score", 0),
             "pipeline_log": pipeline_log,
         }
@@ -366,12 +401,14 @@ class PaperWritingOrchestrator:
         elapsed = time.time() - start_time
         logger.info("\n" + "=" * 60)
         logger.info(f"全流程完成! 耗时: {elapsed:.1f} 秒")
-        logger.info(f"论文已保存至: {paper_path}")
+        logger.info(f"中文论文已保存至: {paper_path}")
+        logger.info(f"英文论文已保存至: {paper_en_path}")
         logger.info(f"元数据已保存至: {metadata_path}")
         logger.info("=" * 60)
 
         return {
             "paper": paper,
+            "paper_en": paper_en,
             "metadata": metadata,
             "format_check_report": check_report,
             "pipeline_log": pipeline_log,
