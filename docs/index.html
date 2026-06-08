@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PaperForge — 论文自动写作助手</title>
+    <meta name="description" content="基于 7-Agent 流水线的学术论文自动写作系统。在对话框中输入需求，AI 自动完成文献检索、论文撰写、格式校验">
+    <meta property="og:title" content="PaperForge — 论文自动写作助手">
+    <meta property="og:description" content="7-Agent 流水线，从需求到完整学术论文的端到端自动化">
+    <meta property="og:type" content="website">
+    <style>
+        /* ============================================================
+           主题系统 (与 Web GUI 一致)
+           ============================================================ */
+        :root {
+            --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            --bg-overlay: rgba(10, 10, 30, 0.85);
+            --surface: rgba(255, 255, 255, 0.06);
+            --surface-hover: rgba(255, 255, 255, 0.10);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #e0e0e0;
+            --text-secondary: #a0a0b0;
+            --accent: #64b5f6;
+            --accent-glow: rgba(100, 180, 246, 0.3);
+            --success: #81c784;
+            --warning: #ffb74d;
+            --danger: #e57373;
+            --radius: 14px;
+            --radius-sm: 8px;
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        [data-theme="rainforest"] {
+            --bg-gradient: linear-gradient(135deg, #0a2a0a 0%, #1a4a1a 30%, #0d3320 60%, #1a3a1a 100%);
+            --bg-overlay: rgba(5, 20, 5, 0.85);
+            --accent: #66bb6a; --accent-glow: rgba(100, 180, 100, 0.3);
+            --surface: rgba(255, 255, 255, 0.05);
+        }
+        [data-theme="snow"] {
+            --bg-gradient: linear-gradient(135deg, #b0bec5 0%, #cfd8dc 20%, #90a4ae 40%, #e0e0e0 70%, #a0b0c0 100%);
+            --bg-overlay: rgba(240, 245, 250, 0.92);
+            --text: #263238; --text-secondary: #546e7a;
+            --surface: rgba(0, 0, 0, 0.04); --surface-hover: rgba(0, 0, 0, 0.06);
+            --border: rgba(0, 0, 0, 0.06); --accent: #37474f; --accent-glow: rgba(55, 71, 79, 0.15);
+        }
+        [data-theme="starry"] {
+            --bg-gradient: linear-gradient(135deg, #0a0a2e 0%, #1a1050 30%, #0d1b3e 60%, #1a0a3a 100%);
+            --bg-overlay: rgba(5, 5, 25, 0.88); --accent: #ab47bc;
+            --accent-glow: rgba(170, 70, 190, 0.35); --surface: rgba(255, 255, 255, 0.05);
+        }
+        [data-theme="sakura"] {
+            --bg-gradient: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 25%, #fce4ec 50%, #f8bbd0 75%, #fce4ec 100%);
+            --bg-overlay: rgba(255, 240, 245, 0.92);
+            --text: #4a2030; --text-secondary: #8b6478;
+            --surface: rgba(255, 255, 255, 0.5); --surface-hover: rgba(255, 255, 255, 0.65);
+            --border: rgba(200, 160, 180, 0.2); --accent: #e91e63; --accent-glow: rgba(233, 30, 99, 0.2);
+        }
+        [data-theme="ocean"] {
+            --bg-gradient: linear-gradient(135deg, #002040 0%, #003366 25%, #004080 50%, #003366 75%, #001a33 100%);
+            --bg-overlay: rgba(0, 15, 35, 0.85); --accent: #4fc3f7;
+            --accent-glow: rgba(80, 195, 247, 0.35); --surface: rgba(255, 255, 255, 0.06);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg-gradient);
+            background-attachment: fixed;
+            color: var(--text);
+            min-height: 100vh;
+            transition: background var(--transition);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* 星空粒子 */
+        body::before {
+            content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0;
+        }
+        [data-theme="starry"] body::before {
+            opacity: 1;
+            background-image:
+                radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.6), transparent),
+                radial-gradient(1px 1px at 25% 45%, rgba(255,255,255,0.5), transparent),
+                radial-gradient(1.5px 1.5px at 40% 15%, rgba(255,255,255,0.7), transparent),
+                radial-gradient(1px 1px at 55% 60%, rgba(255,255,255,0.4), transparent),
+                radial-gradient(1.5px 1.5px at 70% 30%, rgba(255,255,255,0.6), transparent),
+                radial-gradient(1px 1px at 85% 50%, rgba(255,255,255,0.5), transparent),
+                radial-gradient(1px 1px at 15% 75%, rgba(255,255,255,0.4), transparent),
+                radial-gradient(1.5px 1.5px at 60% 85%, rgba(255,255,255,0.5), transparent),
+                radial-gradient(1px 1px at 90% 80%, rgba(255,255,255,0.4), transparent);
+        }
+
+        .container { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 32px 20px; }
+
+        /* ==================== 导航 ==================== */
+        .navbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 0; margin-bottom: 40px; flex-wrap: wrap; gap: 12px;
+        }
+        .logo-text { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.5px; }
+        .logo-badge {
+            display: inline-block; padding: 2px 10px; border-radius: 12px;
+            background: var(--accent-glow); color: var(--accent); font-size: 0.7rem;
+            font-weight: 600; margin-left: 8px; vertical-align: middle;
+        }
+        .nav-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
+            border-radius: var(--radius-sm); border: 1px solid var(--border);
+            background: var(--surface); color: var(--text); cursor: pointer;
+            font-size: 0.85rem; transition: all var(--transition); white-space: nowrap;
+            text-decoration: none; font-family: inherit;
+        }
+        .btn:hover, .btn:focus-visible { background: var(--surface-hover); border-color: var(--accent); }
+        .btn-primary {
+            background: var(--accent); color: #fff; border: none; font-weight: 600;
+            padding: 10px 20px; font-size: 0.9rem;
+        }
+        .btn-primary:hover { filter: brightness(1.15); box-shadow: 0 4px 20px var(--accent-glow); }
+        .btn-ghost { border: 1px solid var(--accent); color: var(--accent); background: transparent; }
+
+        select {
+            appearance: none; -webkit-appearance: none;
+            padding: 9px 32px 9px 14px; border-radius: var(--radius-sm);
+            border: 1px solid var(--border); background: var(--surface); color: var(--text);
+            cursor: pointer; font-size: 0.85rem; font-family: inherit;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a0a0b0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 10px center;
+        }
+
+        .theme-dropdown { position: relative; }
+        .theme-menu {
+            display: none; position: absolute; top: 100%; right: 0; margin-top: 6px;
+            background: var(--bg-overlay); backdrop-filter: blur(20px);
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;
+            z-index: 100; min-width: 140px;
+        }
+        .theme-menu.show { display: block; }
+        .theme-opt {
+            display: block; width: 100%; padding: 8px 14px; border: none;
+            background: transparent; color: var(--text); cursor: pointer;
+            font-size: 0.85rem; border-radius: 6px; text-align: left; font-family: inherit;
+        }
+        .theme-opt:hover { background: var(--surface-hover); }
+        .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+
+        /* ==================== Hero ==================== */
+        .hero { text-align: center; margin-bottom: 48px; }
+        .hero h1 { font-size: 2.8rem; font-weight: 800; letter-spacing: -1px; margin-bottom: 12px; }
+        .hero h1 span { background: linear-gradient(135deg, var(--accent), #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hero p { font-size: 1.15rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto 24px; }
+        .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+        /* ==================== 预览卡片 ==================== */
+        .preview-card {
+            background: var(--bg-overlay); backdrop-filter: blur(20px);
+            border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 28px; margin-bottom: 40px;
+        }
+        .preview-card h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 6px; }
+        .preview-card .sub { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 20px; }
+
+        textarea {
+            width: 100%; min-height: 160px; padding: 16px;
+            border-radius: var(--radius); border: 1px solid var(--border);
+            background: var(--surface); color: var(--text);
+            font-size: 0.9rem; font-family: inherit; line-height: 1.7;
+            resize: vertical; outline: none; transition: border-color var(--transition);
+            pointer-events: none; opacity: 0.7;
+        }
+        textarea:focus { border-color: var(--accent); }
+
+        .preview-row {
+            display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap;
+        }
+        .preview-row input {
+            flex: 1; min-width: 200px; padding: 10px 14px;
+            border-radius: var(--radius-sm); border: 1px solid var(--border);
+            background: var(--surface); color: var(--text); font-size: 0.85rem;
+            font-family: inherit; outline: none; pointer-events: none; opacity: 0.7;
+        }
+
+        .demo-tip {
+            margin-top: 24px; padding: 20px; border-radius: var(--radius);
+            background: var(--accent-glow); border: 1px solid var(--accent);
+            text-align: center;
+        }
+        .demo-tip p { margin-bottom: 12px; font-weight: 500; }
+        .demo-tip code {
+            display: inline-block; padding: 10px 20px; background: rgba(0,0,0,0.3);
+            border-radius: var(--radius-sm); font-size: 0.9rem;
+            font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+            color: var(--text); word-break: break-all;
+        }
+
+        /* ==================== 特性卡片 ==================== */
+        .features { margin-bottom: 48px; }
+        .features h2 { text-align: center; font-size: 1.6rem; font-weight: 700; margin-bottom: 28px; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+        .feature-card {
+            background: var(--bg-overlay); backdrop-filter: blur(20px);
+            border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 24px; transition: all var(--transition);
+        }
+        .feature-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .feature-card .icon { font-size: 1.8rem; margin-bottom: 10px; }
+        .feature-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+        .feature-card p { font-size: 0.85rem; color: var(--text-secondary); }
+
+        /* ==================== Pipeline 图 ==================== */
+        .pipeline { margin-bottom: 48px; }
+        .pipeline h2 { text-align: center; font-size: 1.6rem; font-weight: 700; margin-bottom: 28px; }
+        .pipe-row {
+            display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+        }
+        .pipe-step {
+            display: flex; align-items: center; gap: 8px;
+            padding: 12px 18px; border-radius: var(--radius-sm);
+            background: var(--surface); border: 1px solid var(--border);
+            font-size: 0.82rem; white-space: nowrap;
+        }
+        .pipe-step .num {
+            display: inline-flex; width: 24px; height: 24px; border-radius: 50%;
+            background: var(--accent-glow); color: var(--accent);
+            align-items: center; justify-content: center; font-weight: 700; font-size: 0.75rem;
+        }
+        .pipe-arrow { display: flex; align-items: center; color: var(--text-secondary); font-size: 0.8rem; }
+
+        /* ==================== 快速开始 ==================== */
+        .quickstart { margin-bottom: 48px; }
+        .quickstart h2 { text-align: center; font-size: 1.6rem; font-weight: 700; margin-bottom: 28px; }
+        .code-block {
+            background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 20px 24px;
+            overflow-x: auto; margin-bottom: 16px;
+        }
+        .code-block pre { font-family: "SF Mono", "Fira Code", "Consolas", monospace; font-size: 0.85rem; line-height: 1.8; margin: 0; }
+        .code-block .c { color: var(--text-secondary); }
+        .code-block .cmd { color: var(--accent); }
+
+        .step-list { counter-reset: step; list-style: none; }
+        .step-list li { counter-increment: step; padding: 16px 0 16px 48px; position: relative; border-bottom: 1px solid var(--border); }
+        .step-list li::before {
+            content: counter(step); position: absolute; left: 0; top: 14px;
+            width: 30px; height: 30px; border-radius: 50%;
+            background: var(--accent-glow); color: var(--accent);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.85rem;
+        }
+        .step-list li h4 { font-size: 0.95rem; margin-bottom: 4px; }
+        .step-list li p { font-size: 0.85rem; color: var(--text-secondary); }
+
+        /* ==================== Footer ==================== */
+        footer {
+            text-align: center; padding: 32px 0; border-top: 1px solid var(--border);
+            color: var(--text-secondary); font-size: 0.8rem; margin-top: 40px;
+        }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        /* ==================== 提示覆盖层 ==================== */
+        .overlay {
+            display: none; position: fixed; inset: 0; z-index: 200;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+            align-items: center; justify-content: center;
+        }
+        .overlay.show { display: flex; }
+        .overlay-card {
+            background: var(--bg-overlay); backdrop-filter: blur(20px);
+            border: 1px solid var(--accent); border-radius: var(--radius);
+            padding: 30px; max-width: 480px; text-align: center;
+        }
+        .overlay-card h3 { margin-bottom: 12px; font-size: 1.2rem; }
+        .overlay-card p { color: var(--text-secondary); margin-bottom: 20px; }
+        .overlay-card code {
+            display: block; padding: 14px; background: rgba(0,0,0,0.3);
+            border-radius: var(--radius-sm); margin-bottom: 16px;
+            font-family: "SF Mono", "Consolas", monospace; font-size: 0.85rem;
+            word-break: break-all;
+        }
+
+        @media (max-width: 640px) {
+            .hero h1 { font-size: 1.8rem; }
+            .container { padding: 16px 12px; }
+            .pipe-arrow { display: none; }
+            .pipe-row { gap: 4px; }
+            .pipe-step { padding: 8px 12px; font-size: 0.75rem; }
+        }
+    </style>
+</head>
+<body data-theme="starry">
+<div class="container">
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div>
+            <span class="logo-text">PaperForge</span>
+            <span class="logo-badge">BETA</span>
+        </div>
+        <div class="nav-actions">
+            <select id="theme-select" onchange="setTheme(this.value)">
+                <option value="starry">星空</option>
+                <option value="rainforest">雨林</option>
+                <option value="snow">雪山</option>
+                <option value="sakura">樱花</option>
+                <option value="ocean">海洋</option>
+            </select>
+            <a href="https://github.com/handsomemorgan/scholar_paper_writing" class="btn" target="_blank" rel="noopener">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                GitHub
+            </a>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <h1><span>PaperForge</span> 论文自动写作助手</h1>
+        <p>基于 7-Agent 流水线的学术论文自动写作系统。<br>输入需求，AI 自动完成文献检索、写作、校验的全流程。</p>
+        <div class="hero-actions">
+            <a href="#quickstart" class="btn btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                快速开始
+            </a>
+            <a href="https://github.com/handsomemorgan/scholar_paper_writing" class="btn btn-ghost" target="_blank" rel="noopener">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                查看源码
+            </a>
+        </div>
+    </section>
+
+    <!-- 界面预览 -->
+    <section class="preview-card">
+        <h2>界面预览</h2>
+        <p class="sub">以下为实际 Web GUI 的操作界面。支持切换 DeepSeek / Claude / GPT 模型，以及五款背景主题。</p>
+
+        <textarea readonly>请在此输入您的论文要求...
+
+例如：
+请撰写一篇关于"基于大语言模型的多Agent学术写作系统"的学术论文。
+目标字数：8000字
+参考文献至少15篇
+包含中英文摘要、引言、系统设计、实验评估、结论...</textarea>
+
+        <div class="preview-row">
+            <input readonly value="额外写作指令（可选）">
+            <button class="btn btn-primary" onclick="showLocalTip()">开始写作</button>
+        </div>
+    </section>
+
+    <!-- 提示覆盖层 -->
+    <div class="overlay" id="local-tip-overlay">
+        <div class="overlay-card">
+            <h3>在本地运行 PaperForge</h3>
+            <p>此功能需要在本地启动后端服务。请克隆仓库并运行：</p>
+            <code>git clone https://github.com/handsomemorgan/scholar_paper_writing.git<br>
+cd scholar_paper_writing<br>
+pip install -r requirements.txt<br>
+cp .env.example .env  # 配置 API Key<br>
+python web_server.py</code>
+            <p>然后访问 <strong>http://127.0.0.1:5000</strong> 即可使用完整功能。</p>
+            <button class="btn btn-primary" onclick="closeLocalTip()">知道了</button>
+        </div>
+    </div>
+
+    <!-- 特性 -->
+    <section class="features">
+        <h2>核心特性</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon"></div>
+                <h3> 7-Agent 流水线</h3>
+                <p>分类 → 模板检索 → 关键词提取 → 文献检索 → 文献分析 → 论文撰写 → 格式校验，全自动端到端。</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon"></div>
+                <h3> 多模型支持</h3>
+                <p>DeepSeek、Anthropic Claude、OpenAI GPT 自由切换，自动检测已配置的 API Key。</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon"></div>
+                <h3> 学术文献检索</h3>
+                <p>通过 arXiv 公开 API 检索真实学术文献，三级回退容错链，确保文献数量充足。</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon"></div>
+                <h3> 格式模板管理</h3>
+                <p>RAG 向量检索匹配 5 大类学术格式模板，理科/文科/工科/实验报告/调研报告。</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon"></div>
+                <h3> 中英双语输出</h3>
+                <p>自动生成中文论文 + 英文版本，满足国内外期刊投稿需求。</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon"></div>
+                <h3> 实时进度追踪</h3>
+                <p>Web 界面 SSE 流式推送 8 个阶段的实时进度，完整掌握生成流程。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pipeline -->
+    <section class="pipeline">
+        <h2>7-Agent 流水线架构</h2>
+        <div class="pipe-row">
+            <div class="pipe-step"><span class="num">1</span> 论文分类</div>
+            <span class="pipe-arrow">→</span>
+            <div class="pipe-step"><span class="num">2</span> 模板检索</div>
+            <span class="pipe-arrow">→</span>
+            <div class="pipe-step"><span class="num">3</span> 关键词提取</div>
+            <span class="pipe-arrow">→</span>
+            <div class="pipe-step"><span class="num">4</span> 文献检索</div>
+            <span class="pipe-arrow">→</span>
+            <div class="pipe-step"><span class="num">5</span> 文献分析</div>
+            <span class="pipe-arrow">→</span>
+            <div class="pipe-step"><span class="num">6</span> 论文撰写</div>
+            <span class="pipe-arrow">→</span>
+            <div class="pipe-step"><span class="num">7</span> 格式校验</div>
+        </div>
+    </section>
+
+    <!-- 快速开始 -->
+    <section class="quickstart" id="quickstart">
+        <h2>快速开始</h2>
+        <ol class="step-list">
+            <li>
+                <h4>克隆仓库</h4>
+                <p>将项目克隆到本地</p>
+                <div class="code-block">
+                    <pre><span class="cmd">git clone</span> https://github.com/handsomemorgan/scholar_paper_writing.git
+<span class="cmd">cd</span> scholar_paper_writing</pre>
+                </div>
+            </li>
+            <li>
+                <h4>安装依赖</h4>
+                <p>创建虚拟环境并安装依赖包</p>
+                <div class="code-block">
+                    <pre><span class="cmd">python3 -m venv</span> .venv
+<span class="cmd">source</span> .venv/bin/activate
+<span class="cmd">pip install</span> -r requirements.txt</pre>
+                </div>
+            </li>
+            <li>
+                <h4>配置 API Key</h4>
+                <p>复制环境变量模板，填入你的 API Key</p>
+                <div class="code-block">
+                    <pre><span class="cmd">cp</span> .env.example .env
+<span class="c"># 编辑 .env 填入 DEEPSEEK_API_KEY</span></pre>
+                </div>
+            </li>
+            <li>
+                <h4>启动 Web 界面</h4>
+                <p>启动后浏览器访问 <strong>http://127.0.0.1:5000</strong></p>
+                <div class="code-block">
+                    <pre><span class="cmd">python</span> web_server.py</pre>
+                </div>
+            </li>
+        </ol>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>
+            <a href="https://github.com/handsomemorgan/scholar_paper_writing">PaperForge</a>
+            &mdash; 基于 7-Agent 流水线的学术论文自动写作系统 |
+            <a href="https://github.com/handsomemorgan/scholar_paper_writing/blob/main/LICENSE">MIT License</a>
+        </p>
+        <p style="margin-top:4px;">本工具为研究和学习目的开发，使用时应遵守相关学术规范</p>
+    </footer>
+</div>
+
+<script>
+    // 主题管理
+    const saved = localStorage.getItem('paperforge-theme') || 'starry';
+    document.body.setAttribute('data-theme', saved);
+    document.getElementById('theme-select').value = saved;
+
+    function setTheme(t) {
+        document.body.setAttribute('data-theme', t);
+        localStorage.setItem('paperforge-theme', t);
+    }
+
+    // 本地运行提示
+    function showLocalTip() {
+        document.getElementById('local-tip-overlay').classList.add('show');
+    }
+    function closeLocalTip() {
+        document.getElementById('local-tip-overlay').classList.remove('show');
+    }
+    document.getElementById('local-tip-overlay').addEventListener('click', function(e) {
+        if (e.target === this) closeLocalTip();
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeLocalTip();
+    });
+</script>
+</body>
+</html>

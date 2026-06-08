@@ -1,5 +1,8 @@
 # 论文自动写作助手 (Paper Writing Agent System)
 
+[![GitHub Pages](https://img.shields.io/badge/在线预览-GitHub%20Pages-blue)](https://handsomemorgan.github.io/scholar_paper_writing/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 基于多Agent协作的学术论文自动写作系统。
 
 ## 架构概览
@@ -123,7 +126,9 @@ DEEPSEEK_API_KEY=sk-your-deepseek-api-key
 
 #### 方式 A：Web 图形界面（推荐）
 
-启动后在浏览器中打开 **http://127.0.0.1:5000** 即可使用可视化界面：
+**项目主页**：[https://handsomemorgan.github.io/scholar_paper_writing/](https://handsomemorgan.github.io/scholar_paper_writing/)
+
+启动本地服务后，在浏览器中打开 **http://127.0.0.1:5000** 即可使用可视化界面：
 
 ```bash
 python web_server.py
