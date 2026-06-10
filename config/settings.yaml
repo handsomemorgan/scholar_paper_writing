@@ -55,6 +55,48 @@ literature_search:
   enable_web_fallback: true  # arXiv 收集完毕后始终进行浏览器网页搜索
   min_literature_threshold: 10  # 最少文献数，低于此值触发下一级 fallback
 
+  # ---- 多源文献库配置 (新增) ----
+  multi_source_enabled: true  # 启用多源文献库路由
+  category_source_mapping:
+    science_paper:
+      primary: ["arxiv", "doaj"]
+      secondary: ["openalex"]
+    liberal_arts_paper:
+      primary: ["doaj", "openalex", "socarxiv"]
+      secondary: ["repec", "socolar"]
+    engineering_paper:
+      primary: ["arxiv", "doaj"]
+      secondary: ["openalex"]
+    research_report:
+      primary: ["doaj", "openalex", "socarxiv"]
+      secondary: ["repec", "socolar"]
+    lab_report:
+      primary: ["arxiv", "doaj"]
+      secondary: ["openalex"]
+
+  # 各文献源独立配置
+  source_configs:
+    doaj:
+      base_url: "https://doaj.org/api/search/articles"
+      max_results: 20
+      timeout: 30
+    openalex:
+      base_url: "https://api.openalex.org/works"
+      max_results: 20
+      timeout: 30
+    socarxiv:
+      base_url: "https://api.osf.io/v2/preprints"
+      max_results: 20
+      timeout: 30
+    repec:
+      base_url: "https://ideas.repec.org/cgi-bin/htsearch"
+      max_results: 15
+      timeout: 30
+    socolar:
+      base_url: "http://www.socolar.com"
+      max_results: 15
+      timeout: 30
+
 # 字数-文献收集映射（由 parse_word_count + get_literature_target 驱动）
 word_count_tiers:
   short:       # < 5,000 字
@@ -78,6 +120,32 @@ word_count_tiers:
 word_count_check:
   tolerance: 0.20        # ±20% 容差
   min_references: 10     # 最低参考文献数量
+
+# ---- 运行模式 (新增：教学版 / 申报版 双模式) ----
+# teaching: 面向本科生课程论文，强调批判性思维、竞争性假设、基础统计方法
+# application: 面向课题申报/基金申请，强调政策价值、因果识别、匿名合规
+mode: "teaching"
+
+# ---- 文献质量门槛 (新增) ----
+quality_thresholds:
+  cssci_ratio: 0.70           # CSSCI/SSCI 期刊占比 ≥70%（申报版强制）
+  chinese_literature_ratio: 0.40  # 中文学术文献占比 ≥40%
+  recent_5year_ratio: 0.60    # 近五年文献占比 ≥60%
+  min_high_quality: 10        # 最少高质量文献数量（低于此值触发补充检索）
+  enable_citation_chain: true # 启用引文链扩展（向后追参考文献 + 向前查引用）
+
+# ---- 评审视角检查 (新增) ----
+review_check:
+  enable_3min_test: true      # 启用评审3分钟测试
+  argument_depth_min_ratio: 0.5  # 引用支撑论点比例最低要求
+  concept_consistency_check: true # 核心概念一致性检查
+  counter_intuitive_check: true   # 反常识发现检查
+
+# ---- 论证质量约束 (新增，继承自 Skills 系列) ----
+argument_quality:
+  five_sentence_narrative: true    # 创新方向使用五句叙事结构
+  counter_intuitive_required: true # 必须包含"不是...而是..."反常识判断
+  concept_anchoring_required: true # 新概念必须即时锚定（"——即..."）
 
 # 输出配置
 output:

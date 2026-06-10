@@ -29,3 +29,8 @@ rich>=13.0.0
 click>=8.1.0
 tenacity>=8.0.0
 python-dotenv>=1.0.0
+
+# Figure Generation (Agent 8)
+matplotlib>=3.8.0
+numpy>=1.24.0
+pdf2image>=1.16.0  # 可选：跨平台 PDF→PNG 转换 (macOS 使用内置 sips)

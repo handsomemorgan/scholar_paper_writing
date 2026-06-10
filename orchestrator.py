@@ -179,32 +179,38 @@ from agents.literature_searcher import LiteratureSearchAgent
 from agents.literature_analyzer import LiteratureAnalyzer
 from agents.paper_writer import PaperWriter
 from agents.format_checker import FormatChecker
+from agents.figure_agent import FigureAgent  # Agent 8: 图表生成
 
 class PaperWritingOrchestrator:
     """论文自动写作主编排器
 
-    协调7个Agent完成从课程要求到最终论文的全流程。
+    协调8个Agent完成从课程要求到最终论文的全流程。
+    Agent 8 (图表Agent) 在文献分析后自动提取论文图表并生成数据配图。
     """
 
     def __init__(self, config_path: str = "config/settings.yaml",
-                 provider: str = "deepseek", model: Optional[str] = None):
+                 provider: str = "deepseek", model: Optional[str] = None,
+                 mode: str = "teaching"):
         logger.info("=" * 60)
         logger.info("论文自动写作助手 (Paper Writing Agent System)")
+        logger.info(f"运行模式: {mode}")
         logger.info("=" * 60)
 
         self.config_path = config_path
+        self.mode = mode
 
         # 初始化LLM客户端 —— 支持多后端切换
         logger.info(f"初始化 LLM 客户端 ({provider})...")
         self.llm = create_llm_client(provider=provider, config_path=config_path, model=model)
 
         # 初始化所有Agent
-        logger.info("初始化 7 个 Agent...")
+        logger.info("初始化 8 个 Agent...")
         self.classifier = PaperClassifier(self.llm)
         self.rag_retriever = RAGFormatRetriever(config_path)
         self.keyword_extractor = KeywordExtractor(self.llm)
         self.literature_searcher = LiteratureSearchAgent(config_path)
         self.literature_analyzer = LiteratureAnalyzer(self.llm)
+        self.figure_agent = FigureAgent(self.llm)  # Agent 8: 图表生成
         self.paper_writer = PaperWriter(self.llm)
         self.format_checker = FormatChecker(self.llm)
 
@@ -240,6 +246,12 @@ class PaperWritingOrchestrator:
         """
         start_time = time.time()
         pipeline_log = {}
+
+        # 提前初始化 output_dir（Agent 8 图表生成需要提前使用）
+        if output_dir is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.join("output", timestamp)
+        os.makedirs(output_dir, exist_ok=True)
 
         def _notify(phase, status, message, **details):
             if progress_callback:
@@ -310,14 +322,25 @@ class PaperWritingOrchestrator:
         logger.info("Phase 4: 文献检索 (Agent 4)")
         logger.info("=" * 60)
 
-        _notify("phase4", "running", "正在检索学术文献...")
-        literature_list = self.literature_searcher.search(keyword_result)
+        _notify("phase4", "running", "正在检索学术文献（多源路由）...")
+        # 传入分类信息，使检索路由到对应学科文献库
+        literature_list = self.literature_searcher.search(
+            keyword_result,
+            classification={
+                "category_id": classification["category_id"],
+                "category_name": classification["category_name"],
+                "discipline": classification.get("discipline", ""),
+            },
+        )
 
+        # 获取文献质量指标
+        lit_quality = getattr(self.literature_searcher, 'last_quality_metrics', {})
         pipeline_log["literature"] = {
             "total_found": len(literature_list),
             "high_quality": len(
                 self.literature_searcher.filter_high_quality(literature_list)
             ),
+            "quality_metrics": lit_quality,
         }
         _notify("phase4", "done", f"检索到 {len(literature_list)} 篇文献",
                 count=len(literature_list))
@@ -332,19 +355,68 @@ class PaperWritingOrchestrator:
 
         _notify("phase5", "running", "正在分析文献、发现创新方向...")
         analysis_result = self.literature_analyzer.analyze(
-            literature_list, requirements, keyword_result
+            literature_list, requirements, keyword_result,
+            mode=self.mode,  # 传递运行模式
         )
         pipeline_log["analysis"] = {
             "research_gaps": len(analysis_result.get("research_gaps", [])),
             "innovation_title": analysis_result.get("innovation_proposal", {}).get(
                 "title", "N/A"
             ),
+            "quality_self_check": analysis_result.get("quality_self_check", {}),
+            "hypothesis_mode": analysis_result.get("hypothesis_system", {}).get("mode", self.mode),
         }
         innovation = analysis_result.get("innovation_proposal", {})
         _notify("phase5", "done", f"创新方向: {innovation.get('title', 'N/A')}",
                 gaps=len(analysis_result.get('research_gaps', [])))
         logger.info(f"  创新方向: {innovation.get('title', 'N/A')}")
         logger.info(f"  研究空白数: {len(analysis_result.get('research_gaps', []))}")
+        qc = analysis_result.get("quality_self_check", {})
+        logger.info(f"  质量自检: 五句完整={qc.get('five_sentence_complete')}, "
+                    f"反常识={qc.get('counter_intuitive_present')}, "
+                    f"概念锚定={qc.get('concept_anchored')}")
+
+        # =============================================
+        # Phase 5b (Agent 8): 图表生成
+        #   - Phase A: 从检索论文中提取图表（综述用）
+        #   - Phase B: 基于主题自动生成数据图表
+        # =============================================
+        logger.info("\n" + "=" * 60)
+        logger.info("Phase 5b: 论文配图生成 (Agent 8: FigureAgent)")
+        logger.info("=" * 60)
+
+        _notify("phase5b", "running", "正在提取文献图表并生成数据配图...")
+        figure_result = self.figure_agent.generate_figures(
+            literature_list=literature_list,
+            analysis_result=analysis_result,
+            keyword_result=keyword_result,
+            classification=classification,
+            output_dir=output_dir,
+        )
+        figure_manifest = figure_result.get("manifest_text", "")
+        figure_count = len(figure_result.get("figures", []))
+        fig_stats = figure_result.get("stats", {})
+        pipeline_log["figures"] = {
+            "total": figure_count,
+            "extracted": fig_stats.get("extracted", 0),
+            "generated": fig_stats.get("generated", 0),
+            "failed": fig_stats.get("failed", 0),
+        }
+        _notify("phase5b", "done",
+                f"配图完成: {figure_count} 张 (提取{fig_stats.get('extracted',0)}+生成{fig_stats.get('generated',0)})",
+                figures=figure_count,
+                extracted=fig_stats.get('extracted', 0),
+                generated=fig_stats.get('generated', 0))
+        logger.info(f"  配图总数: {figure_count}")
+        logger.info(f"  提取: {fig_stats.get('extracted', 0)} | "
+                    f"生成: {fig_stats.get('generated', 0)} | "
+                    f"失败: {fig_stats.get('failed', 0)}")
+
+        # 将配图清单追加到 extra_instructions，传递给论文撰写Agent
+        if figure_manifest:
+            full_extra = extra_instructions + "\n\n" + figure_manifest if extra_instructions else figure_manifest
+        else:
+            full_extra = extra_instructions
 
         # =============================================
         # Phase 6: 论文撰写
@@ -360,11 +432,13 @@ class PaperWritingOrchestrator:
             keyword_result=keyword_result,
             literature_list=literature_list,
             analysis_result=analysis_result,
-            extra_instructions=extra_instructions,
+            extra_instructions=full_extra if figure_manifest else extra_instructions,
+            mode=self.mode,  # 传递运行模式
         )
         pipeline_log["writing"] = {
             "paper_length": len(paper),
             "paper_lines": len(paper.split("\n")),
+            "mode": self.mode,
         }
         _notify("phase6", "done", f"中文论文完成 ({len(paper)} 字符)",
                 length=len(paper))
@@ -385,7 +459,8 @@ class PaperWritingOrchestrator:
             keyword_result=keyword_result,
             literature_list=literature_list,
             analysis_result=analysis_result,
-            extra_instructions=extra_instructions,
+            extra_instructions=full_extra if figure_manifest else extra_instructions,
+            mode=self.mode,  # 传递运行模式
         )
         pipeline_log["writing_en"] = {
             "paper_length": len(paper_en),
@@ -406,11 +481,14 @@ class PaperWritingOrchestrator:
             paper=paper,
             template_content=format_template["template_content"],
             category_name=format_template["category_name"],
+            mode=self.mode,  # 传递运行模式
         )
         pipeline_log["format_check"] = {
             "overall_score": check_report.get("overall_score", 0),
             "is_compliant": check_report.get("is_compliant", False),
             "deviations": len(check_report.get("format_deviations", [])),
+            "argument_quality": check_report.get("argument_quality", {}),
+            "reviewer_3min_test": check_report.get("reviewer_3min_test", {}),
         }
         _notify("phase7", "done", f"格式评分: {check_report.get('overall_score', 'N/A')}/100",
                 score=check_report.get('overall_score', 0))
@@ -419,6 +497,11 @@ class PaperWritingOrchestrator:
         logger.info(
             f"  格式偏差: {len(check_report.get('format_deviations', []))} 处"
         )
+        rt = check_report.get("reviewer_3min_test", {})
+        if rt:
+            logger.info(
+                f"  评审3分钟测试: {'通过' if rt.get('overall_pass') else '需改进'}"
+            )
 
         # =============================================
         # 保存输出
@@ -559,10 +642,17 @@ def main():
         "--config", "-c", type=str, default="config/settings.yaml",
         help="配置文件路径"
     )
+    parser.add_argument(
+        "--mode", "-m", type=str, default="teaching",
+        choices=["teaching", "application"],
+        help="运行模式: teaching（教学版）或 application（申报版）"
+    )
 
     args = parser.parse_args()
 
-    orchestrator = PaperWritingOrchestrator(config_path=args.config)
+    orchestrator = PaperWritingOrchestrator(
+        config_path=args.config, mode=args.mode
+    )
 
     if args.interactive:
         orchestrator.run_interactive()
